@@ -1,0 +1,101 @@
+[
+ {
+  "id": "I1",
+  "severity": "high",
+  "kind": "Missing on drawing",
+  "title": "Concrete grade for beams and slab not stated",
+  "detail": "General notes give M25 for the staircase and \"refer chart\" for columns, but no grade for beams and slabs. M25 is assumed; it sets the cement content and the development length.",
+  "affects": "Cement, concrete rate, Ld",
+  "assumption": "Concrete grade M25",
+  "ask": "Confirm concrete grade for second floor beams and slab.",
+  "where": {
+   "sheet": "layout",
+   "x": 1015,
+   "y": 165,
+   "zoom": 3
+  }
+ },
+ {
+  "id": "I2",
+  "severity": "high",
+  "kind": "Missing on drawing",
+  "title": "Clear cover and lap / anchorage length not stated for beams and slabs",
+  "detail": "Note 10 gives cover for columns, walls and footings only. 25 mm cover and Ld = 50d are assumed. IS 456 gives about 53d for Fe550 in M25.",
+  "affects": "Every top bar and stirrup",
+  "assumption": "Cover 25 mm \u00b7 Ld 50d",
+  "ask": "Confirm clear cover (beams / slabs) and lap or development length.",
+  "where": {
+   "sheet": "layout",
+   "x": 1015,
+   "y": 225,
+   "zoom": 3
+  }
+ },
+ {
+  "id": "I3",
+  "severity": "medium",
+  "kind": "Conflict between drawings",
+  "title": "B5 size: 9\u2033 \u00d7 24\u2033 on the layout, 9\u2033 \u00d7 18\u2033 in the schedule",
+  "detail": "The shuttering layout labels B5 as 9\u2033 \u00d7 24\u2033; the beam schedule details it as 9\u2033 \u00d7 18\u2033. 18\u2033 is used, which affects concrete and stirrup length.",
+  "affects": "B5 concrete and stirrups",
+  "assumption": "9\u2033 \u00d7 18\u2033",
+  "ask": "Which depth is correct for B5?",
+  "beams": [
+   "B5"
+  ],
+  "where": {
+   "sheet": "layout",
+   "beam": "B5",
+   "zoom": 4
+  }
+ },
+ {
+  "id": "I4",
+  "severity": "low",
+  "kind": "Numbering",
+  "title": "Beam numbers B42, B46, B51 and B89 do not appear",
+  "detail": "These numbers are missing from the layout and both schedules. Treated as numbering gaps, not missing beams. The site notebook does list B42, B46, B51 and B89, so check which beams the QS means.",
+  "affects": "Completeness check",
+  "assumption": "No such beams",
+  "ask": "Confirm B42, B46, B51, B89 are unused numbers.",
+  "where": {
+   "sheet": "layout",
+   "zoom": 1
+  }
+ },
+ {
+  "id": "I5",
+  "severity": "medium",
+  "kind": "Duplicate",
+  "title": "Schedule sheet 2 repeats the B68\u2013B73 row from sheet 1",
+  "detail": "The same row of elevations appears on both schedule sheets. Counted once.",
+  "affects": "B68\u2013B73 (counted once)",
+  "assumption": "Counted once",
+  "ask": "Confirm the repeated row is a duplicate and not a second set of beams.",
+  "beams": [
+   "B68",
+   "B69",
+   "B71",
+   "B72",
+   "B73"
+  ],
+  "where": {
+   "sheet": "sched2",
+   "zoom": 1
+  }
+ },
+ {
+  "id": "I6",
+  "severity": "medium",
+  "kind": "Conflict between drawings",
+  "title": "One slab panel marked 6\u2033 thick on the bottom slab layout",
+  "detail": "General note says \"slab thickness 5\u2033 THK UNO\"; one panel is marked 6\u2033 on MC-SD-06-04. The slab is taken as 5\u2033 throughout.",
+  "affects": "Slab concrete",
+  "assumption": "5\u2033 everywhere",
+  "ask": "Which panel is 6\u2033, and over what area?",
+  "where": {
+   "sheet": "slabbot",
+   "zoom": 1
+  }
+ }
+]

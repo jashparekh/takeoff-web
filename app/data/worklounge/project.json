@@ -1,0 +1,1121 @@
+{
+ "id": "worklounge",
+ "name": "Work Lounge, Hubballi",
+ "scope": "Second floor slab + beams",
+ "client": "Commercial / residential building @ Hubballi",
+ "consultant": "Manohar Consultants",
+ "revision": "R0 \u00b7 16.09.2026",
+ "grade": "Fe550 steel",
+ "status": "Pilot estimate, not for execution",
+ "sheets": [
+  {
+   "id": "layout",
+   "file": "260919_SF_BEAM LAYOUT.pdf",
+   "svg": "layout.svg",
+   "drg": "MC-SD-07",
+   "title": "Second floor shuttering layout (beam layout)",
+   "hotspots": {
+    "B1": {
+     "x": 414.0,
+     "y": 72.0,
+     "vertical": false,
+     "manual": true
+    },
+    "B3": {
+     "x": 295.9,
+     "y": 98.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B4": {
+     "x": 561.9,
+     "y": 98.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B6": {
+     "x": 439.2,
+     "y": 110.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B11": {
+     "x": 513.6,
+     "y": 170.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B12": {
+     "x": 173.5,
+     "y": 184.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B13": {
+     "x": 308.4,
+     "y": 185.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B14": {
+     "x": 436.5,
+     "y": 185.3,
+     "vertical": false,
+     "manual": false
+    },
+    "B18": {
+     "x": 438.3,
+     "y": 214.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B20": {
+     "x": 601.4,
+     "y": 213.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B21": {
+     "x": 703.4,
+     "y": 213.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B2": {
+     "x": 748.8,
+     "y": 72.0,
+     "vertical": false,
+     "manual": true
+    },
+    "B22": {
+     "x": 219.9,
+     "y": 277.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B24": {
+     "x": 439.1,
+     "y": 275.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B25": {
+     "x": 522.8,
+     "y": 276.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B26": {
+     "x": 621.9,
+     "y": 276.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B35": {
+     "x": 279.2,
+     "y": 370.7,
+     "vertical": false,
+     "manual": false
+    },
+    "HB29": {
+     "x": 135.2,
+     "y": 336.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B30": {
+     "x": 304.4,
+     "y": 343.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B31": {
+     "x": 408.1,
+     "y": 346.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B32": {
+     "x": 534.4,
+     "y": 341.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B36": {
+     "x": 401.6,
+     "y": 409.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B39": {
+     "x": 779.3,
+     "y": 409.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B40A": {
+     "x": 295.3,
+     "y": 419.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B41": {
+     "x": 687.0,
+     "y": 433.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B43": {
+     "x": 294.0,
+     "y": 485.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B45": {
+     "x": 535.1,
+     "y": 483.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B47": {
+     "x": 778.8,
+     "y": 488.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B50": {
+     "x": 413.2,
+     "y": 521.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B52": {
+     "x": 290.6,
+     "y": 531.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B53": {
+     "x": 372.6,
+     "y": 533.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B56": {
+     "x": 116.0,
+     "y": 296.1,
+     "vertical": true,
+     "manual": false
+    },
+    "B57": {
+     "x": 115.9,
+     "y": 222.3,
+     "vertical": true,
+     "manual": false
+    },
+    "B58": {
+     "x": 166.8,
+     "y": 314.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B61": {
+     "x": 206.3,
+     "y": 149.0,
+     "vertical": true,
+     "manual": false
+    },
+    "B62": {
+     "x": 218.4,
+     "y": 454.4,
+     "vertical": true,
+     "manual": false
+    },
+    "B60": {
+     "x": 221.7,
+     "y": 229.0,
+     "vertical": true,
+     "manual": false
+    },
+    "B64": {
+     "x": 262.5,
+     "y": 318.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B66": {
+     "x": 323.1,
+     "y": 311.2,
+     "vertical": true,
+     "manual": false
+    },
+    "B68": {
+     "x": 328.1,
+     "y": 144.2,
+     "vertical": true,
+     "manual": false
+    },
+    "B69": {
+     "x": 367.4,
+     "y": 225.8,
+     "vertical": true,
+     "manual": false
+    },
+    "B73": {
+     "x": 446.9,
+     "y": 387.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B75": {
+     "x": 487.5,
+     "y": 244.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B78": {
+     "x": 552.6,
+     "y": 243.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B82": {
+     "x": 652.4,
+     "y": 452.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B88": {
+     "x": 772.5,
+     "y": 220.2,
+     "vertical": true,
+     "manual": false
+    },
+    "B91": {
+     "x": 823.0,
+     "y": 227.8,
+     "vertical": true,
+     "manual": false
+    },
+    "B91A": {
+     "x": 821.6,
+     "y": 149.9,
+     "vertical": true,
+     "manual": false
+    },
+    "B92": {
+     "x": 821.2,
+     "y": 96.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B93": {
+     "x": 853.1,
+     "y": 382.1,
+     "vertical": true,
+     "manual": false
+    },
+    "B8": {
+     "x": 234.0,
+     "y": 173.5,
+     "vertical": false,
+     "manual": true
+    },
+    "B15": {
+     "x": 586.4,
+     "y": 185.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B34": {
+     "x": 772.1,
+     "y": 343.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B38": {
+     "x": 667.7,
+     "y": 409.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B44": {
+     "x": 422.8,
+     "y": 483.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B76": {
+     "x": 488.2,
+     "y": 170.2,
+     "vertical": true,
+     "manual": false
+    },
+    "HB77": {
+     "x": 543.9,
+     "y": 524.9,
+     "vertical": true,
+     "manual": false
+    },
+    "B84": {
+     "x": 673.2,
+     "y": 159.0,
+     "vertical": true,
+     "manual": false
+    },
+    "B85": {
+     "x": 716.7,
+     "y": 299.9,
+     "vertical": true,
+     "manual": false
+    },
+    "B90": {
+     "x": 828.0,
+     "y": 388.2,
+     "vertical": true,
+     "manual": false
+    },
+    "B5": {
+     "x": 178.4,
+     "y": 109.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B37": {
+     "x": 537.1,
+     "y": 409.3,
+     "vertical": false,
+     "manual": false
+    },
+    "B54": {
+     "x": 516.3,
+     "y": 532.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B59": {
+     "x": 200.9,
+     "y": 396.6,
+     "vertical": true,
+     "manual": false
+    },
+    "B63": {
+     "x": 259.6,
+     "y": 438.5,
+     "vertical": true,
+     "manual": false
+    },
+    "B72": {
+     "x": 445.7,
+     "y": 450.2,
+     "vertical": true,
+     "manual": false
+    },
+    "B86": {
+     "x": 731.4,
+     "y": 242.5,
+     "vertical": true,
+     "manual": false
+    },
+    "B23": {
+     "x": 298.9,
+     "y": 263.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B28": {
+     "x": 526.6,
+     "y": 298.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B49": {
+     "x": 692.1,
+     "y": 511.2,
+     "vertical": false,
+     "manual": false
+    },
+    "HB70": {
+     "x": 402.6,
+     "y": 518.0,
+     "vertical": true,
+     "manual": false
+    },
+    "B7": {
+     "x": 702.0,
+     "y": 109.4,
+     "vertical": false,
+     "manual": true
+    },
+    "B9": {
+     "x": 339.8,
+     "y": 173.5,
+     "vertical": false,
+     "manual": true
+    },
+    "B10": {
+     "x": 633.6,
+     "y": 173.5,
+     "vertical": false,
+     "manual": true
+    },
+    "B16": {
+     "x": 727.2,
+     "y": 183.6,
+     "vertical": false,
+     "manual": true
+    },
+    "B17": {
+     "x": 795.6,
+     "y": 183.6,
+     "vertical": false,
+     "manual": true
+    },
+    "B19": {
+     "x": 519.8,
+     "y": 213.8,
+     "vertical": false,
+     "manual": true
+    },
+    "B27": {
+     "x": 770.4,
+     "y": 262.8,
+     "vertical": false,
+     "manual": true
+    },
+    "B33": {
+     "x": 658.8,
+     "y": 329.0,
+     "vertical": false,
+     "manual": true
+    },
+    "B40": {
+     "x": 229.0,
+     "y": 417.6,
+     "vertical": false,
+     "manual": true
+    },
+    "B48": {
+     "x": 507.6,
+     "y": 511.2,
+     "vertical": false,
+     "manual": true
+    },
+    "B55": {
+     "x": 615.6,
+     "y": 531.4,
+     "vertical": false,
+     "manual": true
+    },
+    "B65": {
+     "x": 248.2,
+     "y": 230.6,
+     "vertical": true,
+     "manual": true
+    },
+    "B67": {
+     "x": 318.0,
+     "y": 425.0,
+     "vertical": true,
+     "manual": true
+    },
+    "B71": {
+     "x": 408.0,
+     "y": 248.6,
+     "vertical": true,
+     "manual": true
+    },
+    "B74": {
+     "x": 490.8,
+     "y": 403.4,
+     "vertical": true,
+     "manual": true
+    },
+    "B79": {
+     "x": 539.8,
+     "y": 151.4,
+     "vertical": true,
+     "manual": true
+    },
+    "B80": {
+     "x": 572.2,
+     "y": 403.4,
+     "vertical": true,
+     "manual": true
+    },
+    "B81": {
+     "x": 608.2,
+     "y": 169.4,
+     "vertical": true,
+     "manual": true
+    },
+    "B83": {
+     "x": 655.0,
+     "y": 248.6,
+     "vertical": true,
+     "manual": true
+    },
+    "B87": {
+     "x": 729.2,
+     "y": 421.4,
+     "vertical": true,
+     "manual": true
+    }
+   },
+   "width": 1191.0,
+   "height": 842.0
+  },
+  {
+   "id": "sched1",
+   "file": "260919_SF_BEAM SCHEDULE -01.pdf",
+   "svg": "sched1.svg",
+   "drg": "MC-SD-06-01",
+   "title": "Beam schedule, sheet 1",
+   "hotspots": {
+    "B2": {
+     "x": 273.7,
+     "y": 91.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B3": {
+     "x": 442.8,
+     "y": 92.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B5": {
+     "x": 785.0,
+     "y": 92.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B6": {
+     "x": 109.5,
+     "y": 143.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B7": {
+     "x": 280.9,
+     "y": 143.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B9": {
+     "x": 506.6,
+     "y": 143.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B12": {
+     "x": 95.4,
+     "y": 198.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B13": {
+     "x": 234.5,
+     "y": 199.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B14": {
+     "x": 388.8,
+     "y": 199.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B15": {
+     "x": 515.4,
+     "y": 199.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B16": {
+     "x": 643.7,
+     "y": 199.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B17": {
+     "x": 723.9,
+     "y": 198.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B18": {
+     "x": 110.0,
+     "y": 257.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B20": {
+     "x": 298.7,
+     "y": 257.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B22": {
+     "x": 141.6,
+     "y": 318.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B23": {
+     "x": 234.6,
+     "y": 318.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B24": {
+     "x": 367.2,
+     "y": 320.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B25": {
+     "x": 480.2,
+     "y": 319.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B28": {
+     "x": 884.0,
+     "y": 314.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B26": {
+     "x": 606.8,
+     "y": 321.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B27": {
+     "x": 763.1,
+     "y": 321.1,
+     "vertical": false,
+     "manual": false
+    },
+    "HB29": {
+     "x": 66.2,
+     "y": 382.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B30": {
+     "x": 154.7,
+     "y": 388.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B31": {
+     "x": 286.4,
+     "y": 390.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B32": {
+     "x": 431.2,
+     "y": 388.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B33": {
+     "x": 584.5,
+     "y": 387.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B35": {
+     "x": 183.8,
+     "y": 452.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B36": {
+     "x": 347.9,
+     "y": 451.3,
+     "vertical": false,
+     "manual": false
+    },
+    "B37": {
+     "x": 484.9,
+     "y": 451.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B39": {
+     "x": 745.1,
+     "y": 450.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B40A": {
+     "x": 141.8,
+     "y": 511.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B43": {
+     "x": 540.8,
+     "y": 516.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B44": {
+     "x": 688.6,
+     "y": 515.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B45": {
+     "x": 824.2,
+     "y": 515.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B52": {
+     "x": 538.1,
+     "y": 577.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B53": {
+     "x": 621.9,
+     "y": 577.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B49": {
+     "x": 302.5,
+     "y": 580.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B59": {
+     "x": 454.4,
+     "y": 636.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B60": {
+     "x": 630.0,
+     "y": 636.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B61": {
+     "x": 717.5,
+     "y": 635.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B56": {
+     "x": 77.8,
+     "y": 640.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B58": {
+     "x": 352.2,
+     "y": 640.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B62": {
+     "x": 849.3,
+     "y": 643.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B66": {
+     "x": 553.7,
+     "y": 714.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B63": {
+     "x": 153.2,
+     "y": 718.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B64": {
+     "x": 276.6,
+     "y": 719.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B67": {
+     "x": 746.9,
+     "y": 721.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B65": {
+     "x": 380.7,
+     "y": 722.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B68": {
+     "x": 95.1,
+     "y": 780.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B69": {
+     "x": 232.5,
+     "y": 785.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B72": {
+     "x": 647.3,
+     "y": 782.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B73": {
+     "x": 727.8,
+     "y": 782.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B4": {
+     "x": 611.2,
+     "y": 91.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B8": {
+     "x": 448.6,
+     "y": 143.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B10": {
+     "x": 559.1,
+     "y": 143.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B21": {
+     "x": 404.2,
+     "y": 255.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B38": {
+     "x": 610.5,
+     "y": 451.9,
+     "vertical": false,
+     "manual": false
+    },
+    "B41": {
+     "x": 261.0,
+     "y": 511.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B50": {
+     "x": 444.2,
+     "y": 574.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B55": {
+     "x": 783.5,
+     "y": 576.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B57": {
+     "x": 161.9,
+     "y": 641.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B71": {
+     "x": 517.7,
+     "y": 780.9,
+     "vertical": false,
+     "manual": false
+    }
+   },
+   "width": 1191.0,
+   "height": 842.0
+  },
+  {
+   "id": "sched2",
+   "file": "260919_SF_BEAM SCHEDULE -02.pdf",
+   "svg": "sched2.svg",
+   "drg": "MC-SD-06-02",
+   "title": "Beam schedule, sheet 2",
+   "hotspots": {
+    "B68": {
+     "x": 104.8,
+     "y": 90.8,
+     "vertical": false,
+     "manual": false
+    },
+    "HB70": {
+     "x": 411.2,
+     "y": 90.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B71": {
+     "x": 527.4,
+     "y": 90.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B72": {
+     "x": 656.9,
+     "y": 92.5,
+     "vertical": false,
+     "manual": false
+    },
+    "B73": {
+     "x": 737.3,
+     "y": 92.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B69": {
+     "x": 242.2,
+     "y": 95.0,
+     "vertical": false,
+     "manual": false
+    },
+    "B74": {
+     "x": 178.7,
+     "y": 156.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B76": {
+     "x": 418.1,
+     "y": 156.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B79": {
+     "x": 776.9,
+     "y": 157.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B80": {
+     "x": 179.4,
+     "y": 220.2,
+     "vertical": false,
+     "manual": false
+    },
+    "B82": {
+     "x": 536.5,
+     "y": 217.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B83": {
+     "x": 632.2,
+     "y": 216.7,
+     "vertical": false,
+     "manual": false
+    },
+    "B86": {
+     "x": 170.7,
+     "y": 288.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B87": {
+     "x": 372.6,
+     "y": 290.8,
+     "vertical": false,
+     "manual": false
+    },
+    "HB1": {
+     "x": 468.4,
+     "y": 290.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B93": {
+     "x": 546.8,
+     "y": 351.1,
+     "vertical": false,
+     "manual": false
+    },
+    "B91": {
+     "x": 310.9,
+     "y": 356.3,
+     "vertical": false,
+     "manual": false
+    },
+    "B92": {
+     "x": 456.2,
+     "y": 355.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B90": {
+     "x": 156.6,
+     "y": 361.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B84": {
+     "x": 741.8,
+     "y": 217.8,
+     "vertical": false,
+     "manual": false
+    },
+    "B85": {
+     "x": 93.8,
+     "y": 289.6,
+     "vertical": false,
+     "manual": false
+    },
+    "B9": {
+     "x": 535.4,
+     "y": 349.4,
+     "vertical": false,
+     "manual": false
+    },
+    "B91A": {
+     "x": 397.8,
+     "y": 356.3,
+     "vertical": false,
+     "manual": false
+    }
+   },
+   "width": 1191.0,
+   "height": 842.0
+  },
+  {
+   "id": "slabbot",
+   "file": "260919_SF_BOTTOM SLAB REINFORCEMENT LAYOUT.pdf",
+   "svg": "slabbot.svg",
+   "drg": "MC-SD-06-04",
+   "title": "Bottom slab reinforcement layout",
+   "hotspots": {},
+   "width": 1191.0,
+   "height": 842.0
+  },
+  {
+   "id": "slabtop",
+   "file": "260919_SF_TOP SLAB REINFORCEMENT LAYOUT.pdf",
+   "svg": "slabtop.svg",
+   "drg": "MC-SD-06-05",
+   "title": "Top slab reinforcement layout",
+   "hotspots": {},
+   "width": 1191.0,
+   "height": 842.0
+  }
+ ]
+}

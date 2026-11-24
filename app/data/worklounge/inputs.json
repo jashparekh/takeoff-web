@@ -1,0 +1,3967 @@
+{
+ "assumptions": [
+  {
+   "key": "slab_t_in",
+   "label": "Slab thickness",
+   "value": 5,
+   "unit": "in",
+   "group": "Geometry",
+   "source": "MC-SD-07: \"Slab thickness 5in THK UNO\"",
+   "confirm": false
+  },
+  {
+   "key": "ld_factor",
+   "label": "Anchorage / lap length factor",
+   "value": 50,
+   "unit": "\u00d7 bar dia",
+   "group": "Detailing",
+   "source": "Not stated on drawings; Fe550 + M25 needs ~53d per IS 456. 50d used (same as pilot)",
+   "confirm": true
+  },
+  {
+   "key": "bot_anch_mm",
+   "label": "Beam bottom-bar anchorage per end",
+   "value": 190,
+   "unit": "mm",
+   "group": "Detailing",
+   "source": "Into 9in support less cover",
+   "confirm": false
+  },
+  {
+   "key": "cover_mm",
+   "label": "Beam clear cover",
+   "value": 25,
+   "unit": "mm",
+   "group": "Detailing",
+   "source": "Not stated for beams/slabs (notes give columns/walls/footings only) - assumed",
+   "confirm": true
+  },
+  {
+   "key": "extra_bot_frac",
+   "label": "Extra bottom bar length",
+   "value": 0.8,
+   "unit": "\u00d7 clear span",
+   "group": "Detailing",
+   "source": "Curtailed bars; drawings show 1ft-0in to 3ft-0in from supports",
+   "confirm": false
+  },
+  {
+   "key": "slab_bot_sp_in",
+   "label": "Slab bottom bar spacing (avg, both ways)",
+   "value": 8.5,
+   "unit": "in",
+   "group": "Slab",
+   "source": "Bottom slab layout MC-SD-06-04: panels K8 @ 7-10in, mostly 8-10in; a few K10@6in",
+   "confirm": true
+  },
+  {
+   "key": "slab_top_sp_in",
+   "label": "Slab top bar spacing over beams (avg)",
+   "value": 8,
+   "unit": "in",
+   "group": "Slab",
+   "source": "Top slab layout MC-SD-06-05: K8 @ 7-10in",
+   "confirm": false
+  },
+  {
+   "key": "slab_top_ext_in",
+   "label": "Slab top bar extension each side of beam",
+   "value": 30,
+   "unit": "in",
+   "group": "Slab",
+   "source": "Top layout shows 2ft-0in to 3ft-6in; 2ft-6in average",
+   "confirm": true
+  },
+  {
+   "key": "slab_dist_sp_in",
+   "label": "Slab top distribution spacing",
+   "value": 9,
+   "unit": "in",
+   "group": "Slab",
+   "source": "Drawing: \"Distribution steel K8@9in c/c\"",
+   "confirm": false
+  },
+  {
+   "key": "slab_anch_allow",
+   "label": "Slab bar anchorage/lap allowance",
+   "value": 0.08,
+   "unit": "fraction",
+   "group": "Slab",
+   "source": "Extra length on bottom mesh for anchorage into beams",
+   "confirm": false
+  },
+  {
+   "key": "steel_wastage",
+   "label": "Steel wastage / laps",
+   "value": 0.03,
+   "unit": "fraction",
+   "group": "Wastage",
+   "source": "Cutting wastage",
+   "confirm": false
+  },
+  {
+   "key": "conc_wastage",
+   "label": "Concrete wastage",
+   "value": 0.02,
+   "unit": "fraction",
+   "group": "Wastage",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "cement_kg_m3",
+   "label": "Cement content, M25 design mix",
+   "value": 350,
+   "unit": "kg/m\u00b3",
+   "group": "Materials",
+   "source": "Typical OPC M25 design mix (IS 10262). Replace with mix design/RMC sheet",
+   "confirm": true
+  },
+  {
+   "key": "bag_kg",
+   "label": "Cement bag weight",
+   "value": 50,
+   "unit": "kg",
+   "group": "Materials",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "floor_sqft",
+   "label": "Floor footprint (slab outline incl. beams)",
+   "value": 5650,
+   "unit": "sq ft",
+   "group": "Geometry",
+   "source": "Measured from MC-SD-07 outline at calibrated scale (5,670-5,720 raw, less beam labels outside the edge)",
+   "confirm": false
+  },
+  {
+   "key": "rate_8",
+   "label": "TMT 8 mm",
+   "value": 74,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_10",
+   "label": "TMT 10 mm",
+   "value": 61,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_12",
+   "label": "TMT 12 mm",
+   "value": 60,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_16",
+   "label": "TMT 16 mm",
+   "value": 59,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_20",
+   "label": "TMT 20 mm",
+   "value": 59,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_25",
+   "label": "TMT 25 mm",
+   "value": 59,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "fe550_premium",
+   "label": "Fe550 premium over Fe500D",
+   "value": 2,
+   "unit": "\u20b9/kg",
+   "group": "Rates",
+   "source": "Assumed; drawings specify Fe550",
+   "confirm": false
+  },
+  {
+   "key": "rate_rmc",
+   "label": "Ready-mix M25",
+   "value": 5400,
+   "unit": "\u20b9/m\u00b3",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  },
+  {
+   "key": "rate_cement_bag",
+   "label": "OPC 53 cement",
+   "value": 427,
+   "unit": "\u20b9/bag",
+   "group": "Rates",
+   "source": "",
+   "confirm": false
+  }
+ ],
+ "beams": [
+  {
+   "name": "B1",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 190,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B2",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 239,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B3",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 194,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B4",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 212,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 5,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B5",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 208,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B6",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 186,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B7",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 240,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 5,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B7-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 57,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B8",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 63,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 15
+    }
+   ]
+  },
+  {
+   "name": "B9",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 54,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B10",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 54,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B11",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 72,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B12",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 141,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B13",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 253,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B14",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 186,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 51
+    }
+   ]
+  },
+  {
+   "name": "B15",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 127,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B16",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 178,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B17",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 44,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B18",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 186,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20,
+     "extra_top_in": 50
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 16,
+     "extra_top_in": 50
+    }
+   ]
+  },
+  {
+   "name": "B19",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 72,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 7
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20,
+     "extra_top_in": 21
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 16,
+     "extra_top_in": 21
+    }
+   ]
+  },
+  {
+   "name": "B20",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 199,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 57
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B21",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 64,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B21-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 51,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B22",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 134,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B23",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 118,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B24",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 244,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 5,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B25",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 68,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 21
+    }
+   ]
+  },
+  {
+   "name": "B26",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 288,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 78
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B27",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 118,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B28",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 130,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "HB29",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 60,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B30",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 123,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B31",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 246,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 65
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 65
+    }
+   ]
+  },
+  {
+   "name": "B32",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 133,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 36
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B33",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 232,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 63
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B34",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 115,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B34-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 45,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B35-cant",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 106,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 4,
+    "mid_in": 4
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B35",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 157,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B36",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 247,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 66
+    }
+   ]
+  },
+  {
+   "name": "B37",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 130,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 51
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B38",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 247,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B39",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 129,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B39-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 48,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B40",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 71,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B40A",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 123,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B41",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 130,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B43",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 168,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 45
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B44",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 246,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B45",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 133,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 36
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B47",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 129,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B48",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 64,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B49",
+   "b_in": 9,
+   "D_in": 22.5,
+   "clear_in": 246,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B50",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 83,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B52",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 123,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 27
+    }
+   ]
+  },
+  {
+   "name": "B53",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 88,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 27
+    }
+   ]
+  },
+  {
+   "name": "B54",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 54,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B55",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 110,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B56",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 84,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 24
+    }
+   ]
+  },
+  {
+   "name": "B57",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 140,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 42
+    }
+   ]
+  },
+  {
+   "name": "B57-cant",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 84,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 4,
+    "mid_in": 4
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 25
+    },
+    {
+     "role": "Top main",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B58",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 143,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B59",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 92,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B60",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 116,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B61",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 112,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B62-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 52,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B62",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 78,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B63-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 53,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B63",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 198,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20,
+     "extra_top_in": 54
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 16,
+     "extra_top_in": 54
+    }
+   ]
+  },
+  {
+   "name": "B64",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 143,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 20,
+     "extra_top_in": 42
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 1,
+     "dia": 16,
+     "extra_top_in": 42
+    }
+   ]
+  },
+  {
+   "name": "B65",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 124,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 25
+    }
+   ]
+  },
+  {
+   "name": "B65-cant",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 99,
+   "kind": "C",
+   "stirrup": {
+    "dia": 12,
+    "end_in": 4,
+    "mid_in": 4
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 36
+    }
+   ]
+  },
+  {
+   "name": "B66",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 98,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B67-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 53,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B67",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 213,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 60
+    }
+   ]
+  },
+  {
+   "name": "B68",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 135,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B69",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 210,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B69-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 73,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "HB70",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 60,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B71",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 72,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B72-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 57,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B72",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 112,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B73",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 119,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B74-cantL",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 53,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B74",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 228,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 5,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 25
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 66
+    }
+   ]
+  },
+  {
+   "name": "B74-cantR",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 33,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B75",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 36,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B76",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 129,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B76-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 75,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "HB77",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 48,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B78",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 42,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B79",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 179,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 51
+    }
+   ]
+  },
+  {
+   "name": "B80-cantL",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 53,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B80",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 228,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 66
+    }
+   ]
+  },
+  {
+   "name": "B80-cantR",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 33,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B81",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 129,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 25,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B81-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 35,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B82-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 33,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B82",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 136,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 7,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 16,
+     "extra_top_in": 39
+    }
+   ]
+  },
+  {
+   "name": "B83",
+   "b_in": 9,
+   "D_in": 24,
+   "clear_in": 72,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 2,
+     "dia": 12,
+     "extra_top_in": 21
+    }
+   ]
+  },
+  {
+   "name": "B84",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 160,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B84-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 59,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top main",
+     "nos": 1,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B85",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 98,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 30
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 30
+    }
+   ]
+  },
+  {
+   "name": "B86",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 120,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B87-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 63,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    }
+   ]
+  },
+  {
+   "name": "B87",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 212,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 9
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 25
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 60
+    }
+   ]
+  },
+  {
+   "name": "HB1",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 15,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B88",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 210,
+   "kind": "S",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 60
+    }
+   ]
+  },
+  {
+   "name": "B88-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 24,
+   "kind": "C",
+   "stirrup": {
+    "dia": 10,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B90-cant",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 24,
+   "kind": "C",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 6
+   },
+   "bars": [
+    {
+     "role": "Top main",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 1,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B90",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 214,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 6,
+    "mid_in": 8
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Top through",
+     "nos": 1,
+     "dia": 16
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 16
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 1,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 60
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20,
+     "extra_top_in": 60
+    }
+   ]
+  },
+  {
+   "name": "B91",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 116,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 16,
+     "extra_top_in": 33
+    }
+   ]
+  },
+  {
+   "name": "B91A",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 112,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 3,
+     "dia": 12
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 12,
+     "extra_top_in": 33
+    },
+    {
+     "role": "Extra top @ support",
+     "nos": 3,
+     "dia": 20
+    }
+   ]
+  },
+  {
+   "name": "B92",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 50,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 5,
+    "mid_in": 5
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 3,
+     "dia": 20
+    },
+    {
+     "role": "Bottom through",
+     "nos": 3,
+     "dia": 12
+    }
+   ]
+  },
+  {
+   "name": "B93",
+   "b_in": 9,
+   "D_in": 18,
+   "clear_in": 123,
+   "kind": "S",
+   "stirrup": {
+    "dia": 8,
+    "end_in": 8,
+    "mid_in": 10
+   },
+   "bars": [
+    {
+     "role": "Top through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom through",
+     "nos": 2,
+     "dia": 12
+    },
+    {
+     "role": "Bottom extra",
+     "nos": 2,
+     "dia": 12
+    }
+   ]
+  }
+ ],
+ "chajja": {
+  "name": "CB1",
+  "count": 10,
+  "length_in": 54,
+  "b_in": 9,
+  "D_in": 5,
+  "bars": [
+   {
+    "role": "Top",
+    "nos": 3,
+    "dia": 16
+   },
+   {
+    "role": "Bottom",
+    "nos": 3,
+    "dia": 16
+   }
+  ],
+  "link": {
+   "dia": 8,
+   "sp_in": 8
+  }
+ },
+ "slab": {
+  "staircase_sqft": 115,
+  "lift_sqft": 36,
+  "ducts_sqft": 54,
+  "notes": {
+   "staircase": "11ft-2in x 10ft-3in (approx.)",
+   "lift": "6ft-0in x 6ft-0in",
+   "ducts": "X-marked panels: 11ft-2in x 3ft-2in, 5ft-4in x 1ft-6in, small ducts"
+  }
+ }
+}
