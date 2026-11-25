@@ -25,6 +25,8 @@ import numpy as np
 from . import calibrate as cal
 from . import classify as cls
 from . import layout as lay
+from . import reconcile as rec
+from . import vision as vis
 from . import schedule as sch
 from . import ocr, pdf
 
@@ -353,3 +355,82 @@ def repeat_issue(db: Session, s: Sheet, names: list[str]) -> None:
     i.affects, i.assumption = 'Steel quantity', 'Each beam counted once'
     i.ask = 'Confirm these are repeats, not separate beams with the same names.'
     i.beams = sorted({n.split('-')[0] for n in names})
+
+
+def vision(db: Session, storage: Storage, sheet_id, *, final: bool = True, client=None) -> str:
+    """Second reading of schedule elevations OCR could not fully read (M3 step 4–5). Off unless switched on with a
+    key (see vision.enabled); a test or replay passes `client`. Returns what happened, for the log."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.sheet_type != 'beam_schedule':
+        return 'not a schedule'
+    st = get_settings()
+    if client is None:
+        if not vis.enabled():
+            return 'off'
+        client = vis.default_client()
+    specs = [b for b in db.scalars(select(BeamSpec).where(BeamSpec.sheet_id == s.id, BeamSpec.status == 'auto',
+                                                          BeamSpec.duplicate_of.is_(None)).order_by(BeamSpec.name))
+             if b.box and b.confidence < st.vision_below_confidence
+             and (b.readings or {}).get('tried') != vis.PROMPT_VERSION]      # failures are not sent again either
+    if not specs:
+        return 'nothing to read'
+    calls = 0
+    try:
+        pending = hashlib.sha256(','.join(sorted(str(b.id) for b in specs)).encode()).hexdigest()[:12]
+        with job(db, 'vision', s.id, f'{vis.PROMPT_VERSION}:{st.vision_model}:{pending}', s.project_id,
+                 final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                img, dpi = pdf.render_gray(f.name, s.page_no, vis.CROP_DPI)
+            for spec in specs:
+                if calls >= st.vision_max_calls_per_sheet:
+                    spec.notes = ((spec.notes or '') + ' Not sent to the vision model: per-sheet limit reached.').strip()
+                    continue
+                png = vis.crop_from(img, dpi, spec.box)
+                ocr = rec.from_spec(spec)
+                first, c1 = vis.read(db, client, png, st.vision_model, project_id=s.project_id, spec_id=spec.id)
+                calls += not c1.cached
+                second = None
+                if first is None:                    # refused or failed: try the escalation model once
+                    second, c2 = vis.read(db, client, png, st.vision_escalate_model, project_id=s.project_id,
+                                          spec_id=spec.id)
+                    calls += not c2.cached
+                    if second is None:
+                        spec.notes = ((spec.notes or '') + ' The vision model could not read this elevation.').strip()
+                        spec.readings = dict(spec.readings or {}, tried=vis.PROMPT_VERSION)
+                        continue
+                    first, second = second, None
+                merged, status, conf = rec.reconcile(ocr, rec.from_model(first))
+                if 'disagree' in status.values():
+                    second, c3 = vis.read(db, client, png, st.vision_escalate_model, project_id=s.project_id,
+                                          spec_id=spec.id)
+                    calls += not c3.cached
+                    if second is not None:
+                        merged, status, conf = rec.reconcile(ocr, rec.from_model(first), rec.from_model(second))
+                apply_reading(spec, merged, status, conf, first, second)
+            db.flush()
+    except Skip:
+        return 'already read'
+    return f'{len(specs)} elevations read, {calls} model calls'
+
+
+def apply_reading(spec: BeamSpec, merged: dict, status: dict, conf: float, first, second) -> None:
+    """Put the reconciled values on the spec, keeping every reading and each field's status for Review."""
+    ocr_snapshot = dict(size=[spec.b_in, spec.D_in], stirrup=[spec.stirrup_dia, spec.stirrup_end_in, spec.stirrup_mid_in],
+                        bars=[[b.role, b.nos, b.dia, b.extra_top_in] for b in spec.bars])
+    from .vision import PROMPT_VERSION
+    spec.readings = dict(ocr=ocr_snapshot, model=first.model_dump(), escalated=second.model_dump() if second else None,
+                         tried=PROMPT_VERSION)
+    spec.field_status = status
+    if merged['size']:
+        spec.b_in, spec.D_in = merged['size']
+    spec.stirrup_dia, spec.stirrup_end_in, spec.stirrup_mid_in = (
+        merged['stirrup_dia'], merged['stirrup_end_in'], merged['stirrup_mid_in'])
+    lengths = rec.extra_top_lengths(second or first)
+    old_len = {(b.nos, b.dia): b.extra_top_in for b in spec.bars if b.role == 'Extra top @ support'}
+    spec.bars = [Bar(role=role, nos=n, dia=d, sort=i,
+                     extra_top_in=(lengths.get((n, d)) or old_len.get((n, d))) if role == 'Extra top @ support' else None)
+                 for i, (role, n, d) in enumerate((r, n, d) for r in rec.ROLES for n, d in (merged[r] or ()))]
+    spec.source, spec.confidence = 'ocr+model', conf
+    worry = {f: s for f, s in status.items() if s != 'agree'}
+    spec.notes = ('Readings differ or are incomplete: ' + ', '.join(f'{f} ({s.replace("_", " ")})' for f, s in worry.items())
+                  + '.') if worry else None

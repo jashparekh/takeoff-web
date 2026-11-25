@@ -62,6 +62,13 @@ set these on the `web` component:
 
 Never put the SMTP username or password in `.do/app.yaml`.
 
+## Vision model (schedules)
+
+Off by default. When switched on, the worker sends crops of schedule elevations that OCR could not fully read to the
+Anthropic API (billed per call; cached so a crop is never read twice). To switch on, on the `worker` component set
+`VISION_ENABLED=true` and add `ANTHROPIC_API_KEY` as an **encrypted** variable. `VISION_MAX_CALLS_PER_SHEET`
+(default 150) caps calls per sheet. Every call's tokens and cost are in the `model_calls` table.
+
 ## Later deploys
 
 - **Push to `main`.** The `migrate` job runs first. If a migration fails, the old version keeps serving.

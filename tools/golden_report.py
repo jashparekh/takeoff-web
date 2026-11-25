@@ -1,6 +1,6 @@
 """Compare the drawing readers with the hand-checked Work Lounge pilot (plan M2 step 6, M3 step 9).
 
-    python -m tools.golden_report [--pt-per-in 0.6] [--schedules] [--json out.json]
+    python -m tools.golden_report [--pt-per-in 0.6] [--schedules] [--vision-replay] [--json out.json]
 
 Pilot truth: `app/data/worklounge/project.json` label positions (hotspots; ~20 placed by hand) and `model.json`
 beam centrelines and columns (from tools/extract_model.py with the schedule's clear spans). Prints labels found,
@@ -129,15 +129,74 @@ def schedule_report() -> dict:
                 not_in_schedule=sorted(n for n in got if n not in truth))
 
 
+def vision_report() -> dict:
+    """Schedules again, with the vision model's recorded answers reconciled in (tests/fixtures/vision, made by
+    tools/record_vision.py). Elevations without a recording keep their OCR reading. No live calls."""
+    import collections
+    import hashlib
+    from types import SimpleNamespace
+    from app.pipeline import pdf, vision
+    from app.pipeline.reconcile import ROLES, from_model, from_spec, reconcile
+    from app.pipeline.schedule import confidence, part_name, read_schedule
+    from app.settings import get_settings
+    truth = {b['name']: b for b in json.loads((DATA / 'inputs.json').read_text())['beams']}
+    model, esc = get_settings().vision_model, get_settings().vision_escalate_model
+    client = vision.ReplayClient()
+    final, replayed, usd = {}, 0, 0.0
+    for f in SCHEDULES:
+        s = read_schedule(str(f), 1)
+        img, dpi = pdf.render_gray(str(f), 1, vision.CROP_DPI)
+        for e in s.elevations:
+            n = part_name(e, s.elevations)
+            if not n or n in final:
+                continue
+            st = e.stirrup or {}
+            spec = SimpleNamespace(b_in=e.b_in, D_in=e.D_in, stirrup_dia=st.get('dia'), stirrup_end_in=st.get('end_in'),
+                                   stirrup_mid_in=st.get('mid_in'), bars=e.bars)
+            ocr = from_spec(spec)
+            merged = ocr
+            if confidence(e) < get_settings().vision_below_confidence:
+                png = vision.crop_from(img, dpi, list(e.box))
+                first, call = vision.read(None, client, png, model)
+                if first is not None:
+                    replayed += 1
+                    usd += call.cost_usd or 0
+                    merged, status, _ = reconcile(ocr, from_model(first))
+                    if 'disagree' in status.values():
+                        second, c2 = vision.read(None, client, png, esc)
+                        if second is not None:
+                            usd += c2.cost_usd or 0
+                            merged, _, _ = reconcile(ocr, from_model(first), from_model(second))
+            final[n] = merged
+    c = collections.Counter()
+    for n, tb in truth.items():
+        m = final.get(n)
+        if m is None:
+            continue
+        want_bars = {r: tuple(sorted((b['nos'], b['dia']) for b in tb['bars'] if b['role'] == r)) or None for r in ROLES}
+        size = m['size'] == (tb['b_in'], tb['D_in'])
+        bars = all((m[r] or None) == want_bars[r] for r in ROLES)
+        stir = (m['stirrup_dia'], m['stirrup_end_in'], m['stirrup_mid_in']) == \
+            (tb['stirrup']['dia'], tb['stirrup']['end_in'], tb['stirrup']['mid_in'])
+        c['all'] += size and bars and stir
+    recorded = len(list(vision.FIXTURES.glob('*.json')))
+    return dict(recordings=recorded, elevations_replayed=replayed, fully_right=c['all'],
+                fully_right_pct=round(100 * c['all'] / len(truth)), recorded_cost_usd=round(usd, 2),
+                note=None if recorded else 'No recordings yet: run tools.record_vision --send-crops with a key.')
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--pt-per-in', type=float, default=0.6)
     ap.add_argument('--json')
     ap.add_argument('--schedules', action='store_true', help='also read the beam schedules')
+    ap.add_argument('--vision-replay', action='store_true', help='schedules with recorded vision readings')
     a = ap.parse_args(argv)
     r = report(a.pt_per_in)
     if a.schedules:
         r.update({f'schedule_{k}': v for k, v in schedule_report().items()})
+    if a.vision_replay:
+        r.update({f'vision_{k}': v for k, v in vision_report().items()})
     for k, v in r.items():
         print(f'{k:24} {v}')
     if a.json:

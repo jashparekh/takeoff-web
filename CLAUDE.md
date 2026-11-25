@@ -64,6 +64,15 @@ Product rules (non-negotiable):
   sheet are kept with `duplicate_of` and raise one Issue (pilot: B68–B73). Pilot baseline (`golden_report
   --schedules`): 105 of 115 elevations, size 103, stirrups 69, bars 28, fully right 16 (14%) — OCR misses callouts
   (73 of 77 bar errors); RapidOCR measured worse (8 vs 35). The vision pass (M3 PR 2) is meant to close the gap.
+- `app/pipeline/vision.py` + `reconcile.py` — vision pass (M3, D5): elevations whose OCR reading is under
+  `VISION_BELOW_CONFIDENCE` are cropped (300 dpi, all strokes) and read by `VISION_MODEL` (Sonnet 5.5) via
+  `client.messages.parse` into `ElevationReading`; refusals, errors and fields that disagree go to
+  `VISION_ESCALATE_MODEL` (Opus 5.5). Reconcile per field: agree / model_only / ocr_only / resolved / disagree /
+  missing — all readings and statuses kept on the spec and shown in the sheet viewer; never picked silently.
+  `model_calls` caches by (crop sha, model, `PROMPT_VERSION`) with tokens, cost, latency; an elevation tried once is
+  not sent again (failures too). **Off unless `VISION_ENABLED=true` and an Anthropic key are set** — it sends drawing
+  crops to the API. `tools/record_vision.py --send-crops` records pilot answers to `tests/fixtures/vision/`;
+  `golden_report --vision-replay` and CI replay them, never calling the API. No recordings yet (Nov 2026).
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).

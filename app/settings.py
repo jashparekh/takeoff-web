@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     max_uploads_per_project: int = 200
     max_pages_per_upload: int = 100
 
+    # Vision model for schedule elevations OCR can't fully read (plan D5, M3). Off until switched on: it sends
+    # crops of the drawings to the Anthropic API. The key is read by the SDK from ANTHROPIC_API_KEY.
+    vision_enabled: bool = False
+    vision_model: str = 'claude-sonnet-5-5'            # reads each elevation
+    vision_escalate_model: str = 'claude-opus-5-5'     # breaks ties when OCR and the first reading disagree
+    vision_below_confidence: float = 0.9               # only elevations whose OCR reading is less complete than this
+    vision_max_calls_per_sheet: int = 150              # cost guard
+
     # Auth (magic link)
     app_url: str = 'http://localhost:8000'   # used to build sign-in links
     cookie_secure: bool = True               # False only for local http
