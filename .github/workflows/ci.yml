@@ -8,12 +8,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: takeoff, POSTGRES_PASSWORD: takeoff, POSTGRES_DB: takeoff_test }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U takeoff" --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://takeoff:takeoff@localhost:5432/takeoff_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q tests 2>&1 | tee test.log
+      - run: python -m pytest -q -rs tests 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
       - run: docker build -t takeoff-web . 2>&1 | tail -150 > build.log
       - name: Post log on failure
         if: failure() && github.event_name == 'pull_request'

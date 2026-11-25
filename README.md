@@ -21,6 +21,19 @@ uvicorn app.main:app --reload
 python -m pytest -q tests
 ```
 
+### Database (upload pipeline, in progress)
+The app still serves the pilot from `app/data/` without a database. To work on the database side:
+```
+docker compose up -d db                      # Postgres 16 (also: redis, minio)
+cp .env.example .env                         # local values only
+alembic upgrade head
+python -m tools.import_pilot worklounge      # --replace to re-import
+createdb -h localhost -U takeoff takeoff_test
+TEST_DATABASE_URL=postgresql+psycopg://takeoff:takeoff@localhost:5432/takeoff_test python -m pytest -q tests
+```
+DB tests are skipped when `TEST_DATABASE_URL` is not set; CI always runs them. After changing `app/db/models.py`,
+add a migration with `alembic revision --autogenerate -m "..."` (a test fails if models and migrations differ).
+
 ## Layout
 - `app/engine.py`: quantity engine (explained steps).
 - `app/main.py`: FastAPI API + static frontend.
