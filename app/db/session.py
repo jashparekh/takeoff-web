@@ -13,7 +13,7 @@ def get_engine(url: str | None = None) -> Engine:
     url = url or get_settings().database_url
     if not url:
         raise RuntimeError('DATABASE_URL is not set (see .env.example)')
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, connect_args={'connect_timeout': 5})
 
 
 def session_factory(url: str | None = None) -> sessionmaker[Session]:

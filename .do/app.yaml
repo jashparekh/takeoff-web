@@ -1,5 +1,36 @@
+# DigitalOcean App Platform spec. Create the app from this file in Jash's PERSONAL account via the dashboard
+# (Create App → import spec). Never with doctl, never in the LoopRL team. Steps: docs/deploy.md.
 name: takeoff-web
 region: blr
+
+databases:
+  # Managed Postgres cluster, created first in the dashboard (Databases → PostgreSQL 16, smallest size, BLR1,
+  # named takeoff-db). App Platform fills ${db.DATABASE_URL} from it; the app switches the URL to psycopg 3.
+  - name: db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: takeoff-db
+    db_name: takeoff
+    db_user: takeoff
+
+jobs:
+  # Runs before every deploy; if a migration fails, the new version is not rolled out.
+  - name: migrate
+    kind: PRE_DEPLOY
+    dockerfile_path: Dockerfile
+    github:
+      repo: jashparekh/takeoff-web
+      branch: main
+      deploy_on_push: true
+    run_command: alembic upgrade head
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+
 services:
   - name: web
     dockerfile_path: Dockerfile
@@ -11,4 +42,22 @@ services:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
-      http_path: /api/health
+      http_path: /api/health        # also checks the database
+      initial_delay_seconds: 10
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: APP_URL                 # used in sign-in links; ${APP_URL} is the app's live URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: SIGNUP_ALLOWLIST        # existing users can always sign in; new emails must match (emails or @domains)
+        scope: RUN_TIME
+        value: ""
+      # Until an email provider is chosen (plan D6), sign-in links are written to the runtime log
+      # (Runtime Logs → web). Anyone who can read the logs can use them, so keep the team on the account small.
+      # To send email instead: set MAIL_BACKEND=smtp, MAIL_FROM and SMTP_HOST, and add SMTP_USER and
+      # SMTP_PASSWORD as encrypted (SECRET) variables in the dashboard, not in this file.
+      - key: MAIL_BACKEND
+        scope: RUN_TIME
+        value: console

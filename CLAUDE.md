@@ -103,7 +103,8 @@ a display assumption; floors other than the second are ghost copies (only second
 Some cantilever stubs sit on the wrong end. About 20 of the 2D layout hotspots were placed by hand.
 
 ## Status and next steps
-1. Deploy on DigitalOcean App Platform from `.do/app.yaml` (region blr, Dockerfile, deploy on push to main).
+1. Deploy on DigitalOcean App Platform from `.do/app.yaml` (region blr, Dockerfile, managed Postgres `takeoff-db`,
+   pre-deploy `alembic upgrade head`, deploy on push to main). Jash does this in the dashboard: `docs/deploy.md`.
 2. PDF upload pipeline (the `#upload` page describes it): store PDFs, render sheets to SVG, OCR beam labels and
    schedule callouts, cross-sheet checks → Issues, "values we need" gate, then calculate with explanations.
 3. Other floors and column schedule → replace ghost floors, bring columns into scope.
