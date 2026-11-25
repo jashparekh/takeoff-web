@@ -27,14 +27,40 @@ def test_strips_from_edge_pairs():
     assert [(round(s.c, 1), s.a, s.b, round(s.width_pt, 1)) for s in ss] == [(102.7, 0, 120, 5.4)]
 
 
-def test_t_junction_does_not_split_but_crossing_does():
+def test_a_beam_runs_through_beams_that_frame_in_or_cross():
     main = strip(False, 100, 0, 300)
     t_stem = strip(True, 100, 102.7, 200)            # frames in from below: rests on `main`
-    cross = strip(True, 200, 50, 150)                # passes right across
+    cross = strip(True, 200, 50, 150)                # passes right across: still not a support of `main`
+    col = g.Rect(296, 96, 304, 104, 2.0, True)       # the far end sits on a column
     lab = Label('B1', False, 150, 95, (140, 92, 160, 98), 9, 18)
-    out = match([lab], [main, t_stem, cross], [], PPI)
-    b = out.beams[0]
-    assert (b.p1, b.p2) == ((0, 100), (200, 100))
+    out = match([lab], [main, t_stem, cross], [col], PPI)
+    assert [(b.p1, b.p2) for b in out.beams] == [((0, 100), (300, 100))]
+
+
+def test_labels_sharing_a_line_split_where_each_sits_mid_span():
+    # Crossings at 90 and 150; labels at 45 and 220. Centring both: cut at 90 (pieces 0–90, 90–300 put the labels
+    # 0 and 25 off centre) beats 150 (75 and 5 off).
+    main = strip(False, 100, 0, 300)
+    crosses = [strip(True, 90, 50, 150), strip(True, 150, 50, 150)]
+    col = g.Rect(296, 96, 304, 104, 2.0, True)
+    a = Label('B1', False, 45, 95, (35, 92, 55, 98))
+    b = Label('B2', False, 220, 95, (210, 92, 230, 98))
+    out = match([a, b], [main] + crosses, [col, g.Rect(-4, 96, 4, 104, 2.0, True)], PPI)
+    assert {m.name: (m.p1[0], m.p2[0]) for m in out.beams} == {'B1': (0, 90), 'B2': (90, 300)}
+
+
+def test_the_line_past_the_last_crossing_beam_is_an_overhang():
+    # A column at 0, a crossing beam at 240, the line runs on to 300 with no column and no label: the span stops at
+    # 240 and the 100" beyond is left for the cantilever reader.
+    main = strip(False, 100, 0, 300)
+    cross = strip(True, 240, 50, 150)
+    col = g.Rect(-4, 96, 4, 104, 2.0, True)
+    lab = Label('B1', False, 120, 95, (110, 92, 130, 98))
+    b = match([lab], [main, cross], [col], PPI).beams[0]
+    assert (b.p1[0], b.p2[0]) == (0, 240)
+    # Ending on a column instead, the whole line is the span.
+    b = match([lab], [main, cross], [col, g.Rect(296, 96, 304, 104, 2.0, True)], PPI).beams[0]
+    assert (b.p1[0], b.p2[0]) == (0, 300)
 
 
 def test_two_labels_in_one_span_split_at_the_beam_between():
@@ -65,14 +91,15 @@ def test_golden_worklounge_layout():
     r = report(PPI)
     assert r['edge_width'] == 0.84                     # found, not hard-coded
     assert r['labels_found'] >= 85                     # 89 of 91 when written
-    assert r['beams_within_4ft'] >= 75                 # 79 of 88 when written; the rest need the schedule (M3)
+    assert r['beams_within_4ft'] >= 80                 # 83 of 88 when written (79 before spans ran through crossings)
     assert r['columns_matching_pilot'] == 25
     assert r['median_mid_error_in'] <= 3
-    assert r['cantilever_beams_matching_schedule'] >= 12          # 14 of 21 when written
+    assert r['cantilever_beams_matching_schedule'] >= 14          # 16 of 21 when written
     assert r['floor_plate_has_curved_corner']                     # the pilot's own outline missed it
     assert 5200 <= r['floor_plate_sqft'] <= 5500                  # pilot 5,131 without the curved corner
     assert r['span_dims_read'] >= 75                              # 85 when written
-    assert r['spans_from_dimension'] >= 40                        # 46 when written
+    assert r['spans_from_dimension'] >= 30                        # 34 when written (most longer spans cross a beam)
+    assert r['spans_matching_workbook_or_drawn'] >= 68            # 71 of 93 when written (65 of 99 before)
     assert r['spans_dimension_agrees_with_geometry'] >= 0.9 * r['spans_from_dimension']
 
 

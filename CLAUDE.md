@@ -47,14 +47,17 @@ Product rules (non-negotiable):
   scaled by each object's matrix); beam edges = the stroke width whose lines pair up most at 4.5–15" spacing (0.84 pt
   on the pilot, found not hard-coded); columns = small rectangles drawn heavier than edges; labels = OCR of a render
   holding only the lettering strokes, at 200/250/300 dpi, upright and turned (89 of 91 pilot labels). A label goes to
-  the nearest parallel strip and the span between columns or beams that cross right over it; a beam framing in from
-  one side (T) only splits a span when two labels share it. Results in `members` (sheet points); people's decisions
+  the nearest parallel strip; spans end at columns and the line's ends. Beams that frame in (T) or cross (X) do not end a
+  span (the pilot's spans run through them) except where two labels share a line (split at the crossings that put
+  each label nearest the middle of its piece) or past the last crossing beam with no column and no label for 12"–110"
+  (an overhang: the span stops at that root beam). Results in `members` (sheet points); people's decisions
   (status ≠ auto) survive re-reads. Cantilevers: a beam's line followed outward past its root column to where it runs
-  out with no further column → `B7-cant` / `-cantL` / `-cantR` (14 of the schedule's 21 cantilever beams, 7 extra;
+  out with no further column → `B7-cant` / `-cantL` / `-cantR` (16 of the schedule's 21 cantilever beams, 6 extra;
   confidence ≤ 0.5 so Review shows them early). Floor plate: every beam-edge segment at any angle within 6 ft of the
   frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
-  corner the pilot missed). `python -m tools.golden_report` compares with the pilot (79 of 88 beams within 4 ft,
-  median 0.1"; 25/25 columns); the misses mostly need schedule spans (M3).
+  corner the pilot missed). `python -m tools.golden_report` compares with the pilot (83 of 88 beams within 4 ft,
+  median 0.1"; 25/25 columns; spans 71 of 93 equal the workbook or the drawn 4–5" over it, 65 of 99 before
+  spans ran through crossings).
 - `app/pipeline/schedule.py` — beam schedules (M3, OCR pass): names/dims and bar callouts are drawn in two lettering
   widths (0.48 / 0.6 pt on the pilot), each rendered alone and OCR'd (callouts: 4 passes, voted); elevations = the
   outline width whose rows sit over the most labels, split at supports; size-only labels next to a beam are its
