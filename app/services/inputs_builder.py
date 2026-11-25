@@ -9,9 +9,10 @@ import hashlib
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, object_session
 
-from ..db.models import Floor, Project
+from ..db.models import BeamSpec, Floor, Member, Project
 from ..engine import Calc
 
 ENGINE_PY = Path(__file__).parents[1] / 'engine.py'
@@ -32,8 +33,57 @@ def assumptions_list(project: Project) -> list[dict]:
                  confirm=a.needs_confirm) for a in project.assumptions]
 
 
+CHECKED = ('accepted', 'edited', 'added')          # a person has looked at it in Review
+
+
+def floor_members(db: Session, floor: Floor) -> list[Member]:
+    return db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'beam',
+                                           Member.status != 'rejected')).all()
+
+
 def measured_floors(project: Project) -> list[Floor]:
-    return [f for b in project.buildings for f in b.floors if f.measured and f.structure_json]
+    """Floors with something to calculate: the pilot's stored structure, or beams read off an uploaded layout."""
+    db = object_session(project)
+    return [f for b in project.buildings for f in b.floors
+            if (f.measured and f.structure_json) or (db is not None and floor_members(db, f))]
+
+
+def natural(name: str):
+    import re
+    return [int(t) if t.isdigit() else t for t in re.split(r'(\d+)', name)]
+
+
+def beams_from_drawings(db: Session, floor: Floor) -> list[dict]:
+    """The engine's `beams` from the floor's layout members (span) and schedule readings (size, bars, stirrups).
+    Every beam must have both, and both must have been checked in Review; otherwise NotReady says what is left."""
+    members = [m for m in floor_members(db, floor) if (m.x1, m.y1) != (m.x2, m.y2)]
+    specs = {s.name: s for s in db.scalars(select(BeamSpec).where(
+        BeamSpec.floor_id == floor.id, BeamSpec.status != 'rejected', BeamSpec.duplicate_of.is_(None)))}
+    todo_m = [m.name for m in members if m.status not in CHECKED]
+    todo_s = [n for n in {m.name for m in members} if n in specs and specs[n].status not in CHECKED]
+    no_spec = sorted({m.name for m in members} - set(specs), key=natural)
+    no_span = sorted({m.name for m in members if not m.clear_in}, key=natural)
+    problems = []
+    if todo_m:
+        problems.append(f'{len(todo_m)} beams on the layout still to check in Review')
+    if todo_s:
+        problems.append(f'{len(todo_s)} schedule readings still to check in Review')
+    if no_spec:
+        problems.append(f'no schedule reading for {", ".join(no_spec[:8])}{"…" if len(no_spec) > 8 else ""}')
+    if no_span:
+        problems.append(f'no span for {", ".join(no_span[:8])}')
+    if problems:
+        raise NotReady('Not ready to calculate: ' + '; '.join(problems) + '.')
+    out = []
+    for m in sorted(members, key=lambda m: natural(m.name)):
+        sp = specs[m.name]
+        out.append(dict(
+            name=m.name, b_in=sp.b_in, D_in=sp.D_in, clear_in=m.clear_in,
+            kind=sp.kind,
+            stirrup=dict(dia=sp.stirrup_dia, end_in=sp.stirrup_end_in, mid_in=sp.stirrup_mid_in),
+            bars=[dict(role=b.role, nos=b.nos, dia=b.dia, **({'extra_top_in': b.extra_top_in} if b.extra_top_in else {}))
+                  for b in sp.bars]))
+    return out
 
 
 def build_inputs(project: Project) -> dict:
@@ -43,8 +93,14 @@ def build_inputs(project: Project) -> dict:
     if len(floors) > 1:
         # Several floors, typical × n and building copies arrive in M6.
         raise NotReady('More than one measured floor is not supported yet.')
-    s = floors[0].structure_json
-    return dict(assumptions=assumptions_list(project), beams=s['beams'], chajja=s.get('chajja'), slab=s['slab'])
+    f = floors[0]
+    db = object_session(project)
+    s = f.structure_json or {}
+    beams = beams_from_drawings(db, f) if db is not None and floor_members(db, f) else s.get('beams')
+    if not s.get('slab'):
+        # Slab openings and chajjas come from the slab layouts, read in M5.
+        raise NotReady('Not ready to calculate: the slab layouts have not been read yet.')
+    return dict(assumptions=assumptions_list(project), beams=beams, chajja=s.get('chajja'), slab=s['slab'])
 
 
 def calculate(project: Project, overrides: dict | None = None) -> dict:

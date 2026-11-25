@@ -152,6 +152,7 @@ class Beam:
     label_b_in: int | None = None
     label_d_in: int | None = None
     cantilever: bool = False
+    clear_in: float | None = None          # face-to-face span from the geometry (see clear_span_in)
 
 
 @dataclass
@@ -323,6 +324,8 @@ def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
     labels = read_labels(path, page_no, vec, edges.width)
     lay = match(labels, edges.strips, cols, pt_per_in)
     add_cantilevers(lay, edges.strips, cols, labels, pt_per_in)
+    for b in lay.beams:
+        b.clear_in = clear_span_in(b, edges.strips, cols, pt_per_in)
     lay.edge_width = edges.width
     lay.outline = g.slab_outline(vec, edges.width, edges.strips, pt_per_in)
     return lay
@@ -331,3 +334,28 @@ def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
 def label_stats(labels: list[Label]) -> dict:
     return dict(labels=len(labels), names=len({lb.name for lb in labels}),
                 median_reads=statistics.median([lb.reads for lb in labels]) if labels else 0)
+
+
+def half_support_in(s_vertical: bool, c: float, at: float, strips: list[g.Strip], cols: list[g.Rect],
+                    pt_per_in: float) -> float:
+    """How far the span end `at` is inside its support, in inches. Spans end either at a support's centre line (a
+    beam crossing right over, or a column) — then half the support comes off — or where the beam's edge lines stop,
+    which is already the support's face (or a free tip) — then nothing does."""
+    for r in cols:
+        across, a, b = (r.cx, r.y0, r.y1) if s_vertical else (r.cy, r.x0, r.x1)
+        if abs(across - c) < 6 and abs((a + b) / 2 - at) <= 1.5:
+            return (b - a) / 2 / pt_per_in
+    for p in strips:
+        if p.vertical != s_vertical and abs(p.c - at) <= 1.5 and p.a - 3 <= c <= p.b + 3:
+            return p.width_pt / 2 / pt_per_in
+    return 0.0
+
+
+def clear_span_in(b: Beam, strips: list[g.Strip], cols: list[g.Rect], pt_per_in: float) -> float:
+    """Face-to-face span (what schedules and the engine call clear span): centre-to-centre less half of each
+    support. A cantilever is measured from the support face to its tip."""
+    c = b.p1[0] if b.vertical else b.p1[1]
+    e1, e2 = sorted((b.p1[1], b.p2[1]) if b.vertical else (b.p1[0], b.p2[0]))
+    c2c = (e2 - e1) / pt_per_in
+    return round(c2c - half_support_in(b.vertical, c, e1, strips, cols, pt_per_in)
+                 - half_support_in(b.vertical, c, e2, strips, cols, pt_per_in), 1)

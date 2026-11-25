@@ -921,6 +921,76 @@ function showSheet(id) {
 }
 
 /* ---------- review: check what the layout reader found ---------- */
+const parseFtIn = t => {
+  t = String(t || '').trim(); if (!t) return null;
+  const m = t.match(/^(\d+)\s*['’]\s*-?\s*(\d+(?:\.\d+)?)?\s*["”]?$/);
+  if (m) return +m[1] * 12 + (+m[2] || 0);
+  return /^\d+(\.\d+)?$/.test(t) ? +t : null;
+};
+const ROLES = ['Top through', 'Top main', 'Extra top @ support', 'Bottom through', 'Bottom extra'];
+const barRow = (b = {}) => `<tr class="br"><td><select class="f" name="role">${ROLES.map(r => `<option ${r === b.role ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+  <td><input class="f num" name="nos" type="number" min="1" max="30" value="${b.nos ?? ''}" style="width:60px"></td>
+  <td><input class="f num" name="dia" type="number" min="6" max="40" value="${b.dia ?? ''}" style="width:60px"></td>
+  <td><input class="f mono" name="len" value="${b.extra_top_in ? ftIn(b.extra_top_in) : ''}" placeholder="—" style="width:80px"></td>
+  <td><button type="button" class="btn sm" data-del aria-label="Remove bar">✕</button></td></tr>`;
+
+/* A schedule reading: the elevation on its sheet, and a bar editor to compare against it. */
+function rvShowSpec(m, form) {
+  if (RV.sheetId !== m.sheet.id) {
+    S.viewers.forEach(v => v.destroy()); S.viewers = [];
+    RV.vw = new Viewer($('#rvVw'), { title: m.sheet.title || m.sheet.drg_no, width: m.sheet.width_pt, height: m.sheet.height_pt }, { src: m.sheet.image_url });
+    S.viewers.push(RV.vw); RV.sheetId = m.sheet.id; RV.vw.onSheetClick = null;
+  }
+  const [x0, y0, x1, y1] = m.box;
+  requestAnimationFrame(() => RV.vw.focus((x0 + x1) / 2, (y0 + y1) / 2, Math.min(6, Math.max(2.5, 0.8 * m.sheet.width_pt / (x1 - x0 + 40) / 2))));
+  RV.vw.setOverlay(`<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" style="stroke:#C2410C;stroke-width:3;fill:none"/>`);
+  const dis = RV.canEdit ? '' : 'disabled', st = m.stirrup || {};
+  form.innerHTML = `
+    <div class="row between"><h2>${esc(m.name)} <span class="muted small">schedule${m.kind === 'C' ? ' · cantilever' : ''}</span></h2><span class="small muted">${RV.i + 1} of ${RV.q.items.length} to check</span></div>
+    <div class="small">${esc(m.sheet.drg_no || '')} · <span style="color:${confColor(m.confidence)}">${m.source === 'ocr' ? 'OCR reading' : 'OCR and vision model'} · confidence ${fx(m.confidence * 100)}%</span></div>
+    ${m.notes ? `<div class="note warn small">${esc(m.notes)}</div>` : ''}
+    ${specCompare(m)}
+    <form id="rvSpec" class="stack small">
+      <div class="row"><label class="stack">Kind<select class="f" name="kind" ${dis}><option value="S" ${m.kind !== 'C' ? 'selected' : ''}>Span</option><option value="C" ${m.kind === 'C' ? 'selected' : ''}>Cantilever</option></select></label>
+        <label class="stack">b (in)<input class="f num" name="b" type="number" step="0.5" value="${m.b_in ?? ''}" ${dis} style="width:70px"></label>
+        <label class="stack">D (in)<input class="f num" name="d" type="number" step="0.5" value="${m.D_in ?? ''}" ${dis} style="width:70px"></label>
+        <label class="stack">Stirrup φ<input class="f num" name="sd" type="number" value="${st.dia ?? ''}" ${dis} style="width:60px"></label>
+        <label class="stack">Ends @ (in)<input class="f num" name="se" type="number" step="0.5" value="${st.end_in ?? ''}" ${dis} style="width:70px"></label>
+        <label class="stack">Middle @ (in)<input class="f num" name="sm" type="number" step="0.5" value="${st.mid_in ?? ''}" ${dis} style="width:70px"></label></div>
+      <div class="tw"><table class="small bars"><thead><tr><th>Role</th><th>Nos</th><th>φ mm</th><th>Extra top length</th><th></th></tr></thead>
+        <tbody>${m.bars.map(barRow).join('')}</tbody></table></div>
+      ${RV.canEdit ? '<div><button type="button" class="btn sm" id="addBar">Add bar</button></div>' : ''}
+    </form>
+    ${RV.canEdit ? `<div class="row rvbtns"><button class="btn pri" data-a="accept">Looks right <kbd>A</kbd></button>
+      <button class="btn" data-a="save">Save edits <kbd>E</kbd></button><button class="btn" data-a="reject">Not a beam <kbd>X</kbd></button></div>` : ''}
+    <div class="row"><button class="btn sm" data-a="prev" ${RV.i ? '' : 'disabled'}>← Back <kbd>P</kbd></button><button class="btn sm" data-a="next">Skip <kbd>N</kbd></button></div>
+    <div class="muted small">OCR read: ${(m.tokens || []).map(esc).join(' · ') || '—'}</div>`;
+  form.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); rvAct(b.dataset.a); }));
+  $('#addBar')?.addEventListener('click', () => $('#rvSpec tbody').insertAdjacentHTML('beforeend', barRow()));
+  $('#rvSpec').addEventListener('click', e => { const d = e.target.closest('[data-del]'); if (d) d.closest('tr').remove(); });
+  $('#rvSpec').addEventListener('submit', e => { e.preventDefault(); rvSpecAct('save', m); });
+}
+
+function rvSpecForm(m) {
+  const f = $('#rvSpec'), num = v => v === '' ? null : +v;
+  const bars = [...f.querySelectorAll('tr.br')].map(r => ({ role: r.querySelector('[name=role]').value, nos: +r.querySelector('[name=nos]').value, dia: +r.querySelector('[name=dia]').value, extra_top_in: parseFtIn(r.querySelector('[name=len]').value) }));
+  if (bars.some(b => !(b.nos > 0) || !(b.dia > 0))) { toast('Every bar row needs a number and a diameter'); return null; }
+  const body = {}, set = (k, v, old) => { if (v != null && v !== old) body[k] = v; };
+  set('kind', f.kind.value, m.kind); set('b_in', num(f.b.value), m.b_in); set('D_in', num(f.d.value), m.D_in);
+  set('stirrup_dia', num(f.sd.value), m.stirrup?.dia); set('stirrup_end_in', num(f.se.value), m.stirrup?.end_in); set('stirrup_mid_in', num(f.sm.value), m.stirrup?.mid_in);
+  const key = l => JSON.stringify(l.map(b => [b.role, b.nos, b.dia, b.extra_top_in || null]).sort());
+  if (key(bars) !== key(m.bars)) body.bars = bars;
+  return body;
+}
+
+function rvSpecAct(a, m) {
+  if (!RV.canEdit) return;
+  if (a === 'reject') return rvSend({ action: 'reject' });
+  if (a === 'redraw') return;
+  const body = rvSpecForm(m); if (body == null) return;
+  if (a === 'save' && !Object.keys(body).length) { $('#rvSpec [name=b]')?.focus(); toast('Change a value, then save'); return; }
+  rvSend({ ...body, action: 'accept' });
+}
 const RV = { q: null, i: 0, mode: null, picks: [], sheetId: null, vw: null, members: {} };
 const ftIn = inch => inch == null ? '—' : `${Math.floor(inch / 12)}'-${Math.round(inch % 12)}"`;
 
@@ -959,6 +1029,7 @@ async function rvShow() {
     return;
   }
   history.replaceState(null, '', `${P}review/${m.id}`);
+  if (m.item === 'spec') return rvShowSpec(m, form);
   if (RV.sheetId !== m.sheet.id) {
     S.viewers.forEach(v => v.destroy()); S.viewers = [];
     RV.vw = new Viewer($('#rvVw'), { title: m.sheet.title || m.sheet.drg_no, width: m.sheet.width_pt, height: m.sheet.height_pt }, { src: m.sheet.image_url });
@@ -985,6 +1056,8 @@ async function rvShow() {
       <div class="row"><label class="stack grow">Width b (in)<input class="f num" name="b" type="number" step="0.5" value="${m.label_b_in ?? ''}" ${dis}></label>
         <label class="stack grow">Depth D (in)<input class="f num" name="d" type="number" step="0.5" value="${m.label_d_in ?? ''}" ${dis}></label></div>
       <span class="muted">Size as written on the drawing label, e.g. B13(9"X18").</span>
+      <label class="stack">Clear span, face to face<input class="f mono" name="clear" value="${m.clear_in ? ftIn(m.clear_in) : ''}" placeholder="e.g. 16'-2&quot;" ${dis}></label>
+      <span class="muted">${m.clear_source === 'person' ? 'Entered by a person.' : 'Measured from the drawing; type the drawn dimension if it differs.'}</span>
     </form>` : ''}
     ${RV.canEdit ? `<div class="row rvbtns">
       <button class="btn pri" data-a="accept" ${m.placed ? '' : 'disabled'}>Looks right <kbd>A</kbd></button>
@@ -1042,7 +1115,7 @@ async function rvPick(pt) {
 async function rvSend(body) {
   const m = RV.q.items[RV.i];
   try {
-    const r = await api(`/api/projects/${encodeURIComponent(PID)}/members/${m.id}`, body, 'PATCH');
+    const r = await api(`/api/projects/${encodeURIComponent(PID)}/${m.item === 'spec' ? 'specs' : 'members'}/${m.id}`, body, 'PATCH');
     const list = RV.members[RV.sheetId] || []; const k = list.findIndex(o => o.id === r.id); if (k >= 0) list[k] = r;
     RV.picks = [];
     if (r.status === 'auto') { RV.q.items[RV.i] = r; rvShow(); return; }
@@ -1055,6 +1128,7 @@ async function rvSend(body) {
 
 function rvAct(a) {
   const m = RV.q.items[RV.i];
+  if (m?.item === 'spec' && ['accept', 'reject', 'save', 'redraw'].includes(a)) return rvSpecAct(a, m);
   if (a === 'next') { if (RV.i < RV.q.items.length - 1) { RV.i++; rvShow(); } return; }
   if (a === 'prev') { if (RV.i > 0) { RV.i--; rvShow(); } return; }
   if (!RV.canEdit) return;
@@ -1069,7 +1143,10 @@ function rvAct(a) {
     if (name && name !== m.name) body.name = name;
     if (b && b !== m.label_b_in) body.label_b_in = b;
     if (d && d !== m.label_d_in) body.label_d_in = d;
-    if (!Object.keys(body).length) { f.name.focus(); toast('Change the name or size, then save'); return; }
+    const cl = parseFtIn(f.clear.value);
+    if (f.clear.value.trim() && cl == null) { f.clear.focus(); toast('Write the span like 16\'-2" or in inches'); return; }
+    if (cl && Math.abs(cl - (m.clear_in || 0)) > 0.05) body.clear_in = cl;
+    if (!Object.keys(body).length) { f.name.focus(); f.name.select(); toast('Change the name, size or span, then save'); return; }
     if (m.placed) body.action = 'accept';
     return rvSend(body);
   }
@@ -1080,8 +1157,7 @@ document.addEventListener('keydown', e => {
   const a = { a: 'accept', e: 'edit', x: 'reject', n: 'next', p: 'prev', r: 'redraw' }[e.key.toLowerCase()];
   if (!a) { if (e.key === 'Escape' && RV.mode) { RV.mode = null; RV.picks = []; rvDraw(); const el = $('#rvPick'); if (el) el.innerHTML = ''; } return; }
   e.preventDefault();
-  if (a === 'edit') { $('#rvEdit')?.name.focus(); $('#rvEdit')?.name.select(); return; }
-  rvAct(a);
+  rvAct(a === 'edit' ? 'save' : a);                // E = save edits (the button says so)
 });
 
 boot().catch(e => { main.innerHTML = `<div class="pad">Could not load Takeoff. ${esc(e.message)}</div>`; console.error(e); });

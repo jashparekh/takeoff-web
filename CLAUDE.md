@@ -73,6 +73,16 @@ Product rules (non-negotiable):
   not sent again (failures too). **Off unless `VISION_ENABLED=true` and an Anthropic key are set** — it sends drawing
   crops to the API. `tools/record_vision.py --send-crops` records pilot answers to `tests/fixtures/vision/`;
   `golden_report --vision-replay` and CI replay them, never calling the API. No recordings yet (Nov 2026).
+- Engine from the drawings (M3): `inputs_builder.beams_from_drawings` builds `beams[]` from layout members (clear span)
+  + schedule specs (size, kind, stirrups, bars) when a floor has members; **every member and spec used must be checked
+  in Review** (accepted / edited / added), else `NotReady` lists what is left (the API's `not_ready`). Chajja and slab
+  still come from `floors.structure_json` until slab sheets are read (M5). Clear span = centre-to-centre less half the
+  support where the span ends on a support's centre line (`layout.clear_span_in`): only ~20% within 1" of the pilot,
+  so Review takes a typed span (`clear_in`, ft-in). `services/checks.py`: size conflicts (B5), layout beams without a
+  schedule reading and vice versa, layout cantilevers the schedule doesn't have → Issues (rule `check_*`), re-run
+  after stages and Review edits. Review also lists schedule readings with a bar editor (`PATCH …/specs/{id}`,
+  `POST …/sheets/{id}/specs`). `tests/test_acceptance.py`: upload → review via the API → inputs equal `inputs.json`
+  and 7,744 kg (review effort printed: mostly spans and bars).
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..services import checks
 from ..db.models import Bar, BeamSpec, Building, Floor, Issue, Job, Member, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
@@ -33,7 +34,7 @@ from . import ocr, pdf
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
-LAYOUT_VERSION = 2               # 2: cantilevers and slab outline
+LAYOUT_VERSION = 3               # 2: cantilevers and slab outline; 3: clear spans
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -275,7 +276,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='beam', name=b.name,
                               vertical=b.vertical, x1=b.p1[0], y1=b.p1[1], x2=b.p2[0], y2=b.p2[1], b_in=b.b_in,
                               label_b_in=b.label_b_in, label_d_in=b.label_d_in, label_box=list(b.label.box),
-                              confidence=b.confidence, note=b.note))
+                              clear_in=b.clear_in, clear_source='layout', confidence=b.confidence, note=b.note))
             for c in r.columns:
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='column',
                               x1=c.x0, y1=c.y0, x2=c.x1, y2=c.y1,
@@ -291,6 +292,8 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                               vertical=u.vertical, x1=u.x, y1=u.y, x2=u.x, y2=u.y, label_box=list(u.box),
                               label_b_in=u.b_in, label_d_in=u.d_in, confidence=0,
                               note='Label read, but no beam found next to it.'))
+            db.flush()
+            checks.run(db, s.project_id)
             names = {b.name for b in r.beams if not b.cantilever}
             cants = sum(1 for b in r.beams if b.cantilever)
             s.layout_version = LAYOUT_VERSION
@@ -336,6 +339,8 @@ def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
                 n += 1
             if repeats:
                 repeat_issue(db, s, repeats)
+            db.flush()
+            checks.run(db, s.project_id)
             s.schedule_version = SCHEDULE_VERSION
             s.layout_note = (f'{n} beam elevations read' + (f'; {len(repeats)} repeat another sheet' if repeats else '')
                              + '.')
@@ -408,6 +413,7 @@ def vision(db: Session, storage: Storage, sheet_id, *, final: bool = True, clien
                         merged, status, conf = rec.reconcile(ocr, rec.from_model(first), rec.from_model(second))
                 apply_reading(spec, merged, status, conf, first, second)
             db.flush()
+            checks.run(db, s.project_id)
     except Skip:
         return 'already read'
     return f'{len(specs)} elevations read, {calls} model calls'
