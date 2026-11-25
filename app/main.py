@@ -21,6 +21,14 @@ app = FastAPI(title='Takeoff', docs_url='/api/docs', openapi_url='/api/openapi.j
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
+@app.middleware('http')
+async def no_stale_frontend(request, call_next):
+    resp = await call_next(request)
+    if request.url.path == '/' or request.url.path.startswith('/static/'):
+        resp.headers['Cache-Control'] = 'no-cache'   # always revalidate, so updates show without a hard refresh
+    return resp
+
+
 @lru_cache
 def load(pid: str) -> dict:
     d = DATA / pid
