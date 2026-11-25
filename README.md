@@ -49,7 +49,5 @@ add a migration with `alembic revision --autogenerate -m "..."` (a test fails if
 - `web/vendor/`: three.js r160 (MIT) with OrbitControls.
 
 ## Deploy
-DigitalOcean App Platform, spec in `.do/app.yaml` (Dockerfile build, deploys on push to `main`).
-
-## Deploy
-DigitalOcean App Platform from `.do/app.yaml` (managed Postgres, migrations before each release). Steps: `docs/deploy.md`.
+DigitalOcean App Platform, spec in `.do/app.yaml`: Dockerfile build, managed Postgres, migrations before each release,
+deploys on push to `main`. Steps: `docs/deploy.md`.
