@@ -9,3 +9,4 @@ __pycache__
 !tools/import_pilot.py
 .venv
 .env
+!tools/users.py

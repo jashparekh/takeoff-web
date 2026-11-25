@@ -31,6 +31,11 @@ python -m tools.import_pilot worklounge      # --replace to re-import
 createdb -h localhost -U takeoff takeoff_test
 TEST_DATABASE_URL=postgresql+psycopg://takeoff:takeoff@localhost:5432/takeoff_test python -m pytest -q tests
 ```
+Sign-in (magic link): grant yourself access with
+`python -m tools.users add you@example.com --project worklounge --role owner`, then `POST /api/auth/link`.
+With `MAIL_BACKEND=console` (the default) the link is printed in the server log instead of emailed;
+set `COOKIE_SECURE=false` for local http. The pilot views don't require sign-in yet.
+
 DB tests are skipped when `TEST_DATABASE_URL` is not set; CI always runs them. After changing `app/db/models.py`,
 add a migration with `alembic revision --autogenerate -m "..."` (a test fails if models and migrations differ).
 

@@ -18,7 +18,25 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
-    secret_key: str | None = None            # session cookie signing (auth, M0 PR 2)
+    secret_key: str | None = None            # reserved (CSRF tokens later); sessions are opaque DB tokens
+
+    # Auth (magic link)
+    app_url: str = 'http://localhost:8000'   # used to build sign-in links
+    cookie_secure: bool = True               # False only for local http
+    session_days: int = 30
+    login_link_minutes: int = 15
+    login_links_per_15min: int = 5          # per email
+    # Beta is invite-only: existing users can always sign in; new emails must match this list
+    # (comma-separated emails or @domains), e.g. "a@x.com,@mycompany.in".
+    signup_allowlist: str = ''
+
+    # Email: "console" logs the link (development); "smtp" sends it (Postmark, Resend, SES all speak SMTP)
+    mail_backend: str = 'console'
+    mail_from: str = 'Takeoff <no-reply@localhost>'
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
 
 
 @lru_cache

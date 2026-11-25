@@ -18,3 +18,17 @@ def get_engine(url: str | None = None) -> Engine:
 
 def session_factory(url: str | None = None) -> sessionmaker[Session]:
     return sessionmaker(get_engine(url), expire_on_commit=False)
+
+
+def get_db():
+    """FastAPI dependency: one session per request, committed on success, rolled back on error."""
+    from fastapi import HTTPException
+    if not get_settings().database_url:
+        raise HTTPException(503, 'Database not configured')
+    with session_factory()() as s:
+        try:
+            yield s
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise

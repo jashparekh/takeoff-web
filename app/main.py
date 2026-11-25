@@ -4,12 +4,15 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .auth.routes import router as auth_router
 from .engine import Calc, unit_wt
 
 ROOT = Path(__file__).parent
@@ -19,6 +22,18 @@ FT = 0.3048
 
 app = FastAPI(title='Takeoff', docs_url='/api/docs', openapi_url='/api/openapi.json')
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.include_router(auth_router)
+UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+@app.middleware('http')
+async def same_origin_writes(request, call_next):
+    """Refuse cross-site writes. The session cookie is SameSite=Lax already; this also covers
+    same-site subdomains and old browsers. Requests without an Origin header (curl, tests) pass."""
+    origin = request.headers.get('origin')
+    if request.method in UNSAFE and origin and urlsplit(origin).netloc != request.headers.get('host'):
+        return JSONResponse({'detail': 'Cross-site request refused'}, status_code=403)
+    return await call_next(request)
 
 
 @app.middleware('http')
