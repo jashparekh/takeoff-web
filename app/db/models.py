@@ -20,6 +20,7 @@ ISSUE_STATUSES = ('open', 'answered', 'resolved')
 UPLOAD_STATUSES = ('queued', 'processing', 'done', 'failed')
 SHEET_STATUSES = ('queued', 'rendering', 'ready', 'needs_attention')
 JOB_STATUSES = ('queued', 'running', 'done', 'failed')
+CLASSIFY_STATUSES = ('auto', 'needs_review', 'confirmed')     # confirmed = a person set or checked it
 
 
 class Base(DeclarativeBase):
@@ -228,9 +229,15 @@ class Sheet(Base):
     drg_no: Mapped[str | None] = mapped_column(String(100))
     title: Mapped[str | None] = mapped_column(Text)
     revision: Mapped[str | None] = mapped_column(String(100))
+    scale_text: Mapped[str | None] = mapped_column(String(32))        # printed scale, e.g. "1:100" (not yet checked)
+    drawn_on: Mapped[str | None] = mapped_column(String(32))          # date as printed in the title block
+    classify_status: Mapped[str | None] = mapped_column(String(16))   # None until classify has run
+    classify_note: Mapped[str | None] = mapped_column(Text)           # why it needs review, in plain words
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
-    __table_args__ = (UniqueConstraint('project_id', 'page_hash'), CheckConstraint(f"status IN {SHEET_STATUSES}", name='status_valid'))
+    __table_args__ = (UniqueConstraint('project_id', 'page_hash'),
+                      CheckConstraint(f"status IN {SHEET_STATUSES}", name='status_valid'),
+                      CheckConstraint(f"classify_status IN {CLASSIFY_STATUSES}", name='classify_status_valid'))
 
 
 class Job(Base):
@@ -249,3 +256,16 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (CheckConstraint(f"status IN {JOB_STATUSES}", name='status_valid'),)
+
+
+class Correction(Base):
+    """A person changed something the pipeline read (sheet type, floor…). Kept to measure and improve the readers."""
+    __tablename__ = 'corrections'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    sheet_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('sheets.id', ondelete='CASCADE'), index=True)
+    field: Mapped[str] = mapped_column(String(64))
+    old_value: Mapped[str | None] = mapped_column(Text)
+    new_value: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = created()

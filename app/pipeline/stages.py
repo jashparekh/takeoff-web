@@ -2,10 +2,11 @@
 work was done, so running a stage again (a retry, a duplicate queue message, a re-upload) does nothing new.
 
 These are plain functions taking a session and storage, so tests run them without Redis; `jobs.py` wraps them
-for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) for each new page. Classify and calibrate
-come next (plan M1 steps 6–7), then layout / schedule / slab by sheet type (M2–M5).
+for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) and classify(sheet) for each new page.
+Calibrate comes next (plan M1 step 7), then layout / schedule / slab by sheet type (M2–M5).
 """
 from __future__ import annotations
+import hashlib
 import logging
 import tempfile
 from contextlib import contextmanager
@@ -15,10 +16,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..db.models import Job, Sheet, Upload
+from ..db.models import Building, Floor, Job, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
+from . import classify as cls
 from . import pdf
+
+CLASSIFY_VERSION = 1             # bump when the title-block reader changes, so sheets are read again
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -131,4 +135,41 @@ def render(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
             s = db.get(Sheet, sheet_id)
             s.status, s.error = 'needs_attention', 'This page could not be drawn. It is skipped; the others go on.'
             db.commit()
+        raise
+
+
+def project_floors(db: Session, project_id) -> list[tuple]:
+    return [(f.id, f.name) for f in db.scalars(select(Floor).join(Building).where(Building.project_id == project_id)
+                                                .order_by(Building.sort, Floor.sort))]
+
+
+def classify(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Read the title block and set type, floor, drawing number, revision, scale and date. A sheet a person has
+    confirmed is never changed. Runs again when the project's floors change (they are part of the input)."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.classify_status == 'confirmed':
+        return
+    floors = project_floors(db, s.project_id)
+    sig = hashlib.sha256(repr([(str(i), n) for i, n in floors]).encode()).hexdigest()[:16]
+    try:
+        with job(db, 'classify', s.id, f'{s.page_hash}:v{CLASSIFY_VERSION}:{sig}', s.project_id, final=final,
+                 sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                lines = pdf.text_lines(f.name, s.page_no)
+            r = cls.classify(lines, floors, s.upload.filename)
+            db.refresh(s)
+            if s.classify_status == 'confirmed':          # a person confirmed it while we were reading
+                return
+            tb = r.title_block
+            s.drg_no, s.title, s.revision, s.scale_text, s.drawn_on = tb.drg_no, tb.title, tb.revision, tb.scale, tb.date
+            s.sheet_type, s.floor_id = r.sheet_type, r.floor_id
+            s.classify_status, s.classify_note = r.status, r.note
+    except Skip:
+        return
+    except Exception:
+        if final:
+            s = db.get(Sheet, sheet_id)
+            if s.classify_status != 'confirmed':
+                s.classify_status, s.classify_note = 'needs_review', 'The title block could not be read. Pick the type and floor.'
+                db.commit()
         raise

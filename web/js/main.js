@@ -12,8 +12,8 @@ const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab',
 const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload'].includes(v)));
 
 class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
-async function api(path, body) {
-  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+async function api(path, body, method = 'POST') {
+  const r = await fetch(path, body ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   if (r.status === 401 && !path.startsWith('/api/auth/')) { S.me = null; go('#signin'); throw new ApiError(401, 'Sign in required'); }
   if (!r.ok) {
     let d; try { d = (await r.json()).detail; } catch { }
@@ -641,6 +641,7 @@ function upload(sheetId) {
         <div id="sending" class="stack small"></div>
         <p class="small muted">PDF only, up to 50 MB each. A file or page that is already in the project is not added again.</p>
       </section>` : ''}
+      <section class="panel" id="coverage" hidden></section>
       <section class="panel" id="sheetView" hidden></section>
       <section class="panel"><div class="hd"><h2>Uploads</h2><span class="small muted" id="upState"></span></div><div id="ups" class="stack pad"><div class="muted small">Loading…</div></div></section>
     </div>
@@ -659,11 +660,14 @@ function upload(sheetId) {
     ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
     drop.addEventListener('drop', e => sendFiles([...e.dataTransfer.files]));
   }
-  $('#ups').addEventListener('click', e => {
+  const open = e => {
     const t = e.target.closest('[data-sheet]'); if (!t) return;
     e.preventDefault(); history.replaceState(null, '', `${P}upload/${t.dataset.sheet}`); showSheet(t.dataset.sheet);
-  });
-  refreshUploads(sheetId);
+  };
+  $('#ups').addEventListener('click', open);
+  $('#coverage').addEventListener('click', open);
+  (S.sheetTypes ? Promise.resolve() : api('/api/sheet-types').then(t => { S.sheetTypes = t; }))
+    .catch(() => { S.sheetTypes = []; }).then(() => refreshUploads(sheetId));
 }
 
 function sendFiles(files) {
@@ -698,27 +702,79 @@ async function refreshUploads(openSheet) {
   if (PID !== pid || S.view !== 'upload' || !$('#ups')) return;
   S.uploads = ups;
   S.upSheets = Object.fromEntries(ups.flatMap(u => u.sheets.map(s => [s.id, { ...s, filename: u.filename }])));
-  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status)));
+  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status) || !s.classify_status));
   $('#upState').textContent = busy ? 'Working… this page updates by itself' : '';
   $('#ups').innerHTML = ups.length ? ups.map(u => `<div class="upl stack">
     <div class="row between"><span><b>${esc(u.filename)}</b> <span class="small muted">${mb(u.size_bytes)}${u.pages != null ? ` · ${u.pages} page${u.pages === 1 ? '' : 's'}` : ''}${u.pages != null && u.new_sheets < u.pages ? ` · ${u.pages - u.new_sheets} already in the project` : ''}</span></span>${chip(UP_STATUS[u.status])}</div>
     ${u.error ? `<div class="note warn">${esc(u.error)}</div>` : ''}
     ${u.sheets.length ? `<div class="thumbs">${u.sheets.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="thumb ${s.status === 'ready' ? '' : 'off'}" aria-label="Page ${s.page_no}">
       ${s.thumb_url ? `<img src="${s.thumb_url}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
-      <span class="row between small"><span>Page ${s.page_no}</span>${s.status === 'ready' ? '' : chip(SHEET_STATUS[s.status])}</span></a>`).join('')}</div>` : ''}
+      <span class="row between small"><span>${s.drg_no ? esc(s.drg_no) : `Page ${s.page_no}`}</span>${s.status === 'ready' ? (s.classify_status === 'needs_review' ? chip(['Check', 'medium']) : '') : chip(SHEET_STATUS[s.status])}</span>
+      <span class="small muted">${esc(sheetPlace(s))}</span></a>`).join('')}</div>` : ''}
   </div>`).join('') : '<div class="muted small">Nothing uploaded yet.</div>';
+  renderCoverage();
   if (openSheet) showSheet(openSheet);
   if (busy) refreshUploads.t = setTimeout(() => refreshUploads(), 3000);
+}
+
+const typeLabel = k => (S.sheetTypes || []).find(t => t.key === k)?.label || (k ? k.replace(/_/g, ' ') : '');
+const floorsList = () => (S.project.buildings || []).flatMap(b => b.floors.map(f => ({ ...f, building: b.name, label: S.project.buildings.length > 1 ? `${b.name} · ${f.name}` : f.name })));
+const floorLabel = id => floorsList().find(f => f.id === id)?.label || '';
+function sheetPlace(s) {
+  if (s.status !== 'ready' && !s.classify_status) return '';
+  if (!s.classify_status) return 'Reading title block…';
+  return [typeLabel(s.sheet_type) || 'Type not known', floorLabel(s.floor_id) || 'Floor not known'].join(' · ');
+}
+
+/* Coverage: for each building, floors × the drawings each floor needs. Missing cells say what to upload. */
+function renderCoverage() {
+  const el = $('#coverage'); if (!el) return;
+  const sheets = Object.values(S.upSheets || {});
+  if (!sheets.length || !S.sheetTypes?.length) { el.hidden = true; return; }
+  const cols = S.sheetTypes.filter(t => t.coverage);
+  const at = (fid, type) => sheets.filter(s => s.floor_id === fid && s.sheet_type === type);
+  const loose = sheets.filter(s => s.classify_status && (!s.floor_id || !s.sheet_type));
+  const check = sheets.filter(s => s.classify_status === 'needs_review');
+  const other = sheets.filter(s => s.floor_id && s.sheet_type && !cols.some(c => c.key === s.sheet_type));
+  el.hidden = false;
+  el.innerHTML = `<div class="hd"><h2>Coverage</h2><span class="small muted">${check.length ? `${check.length} sheet${check.length === 1 ? '' : 's'} to check` : 'Sheets are placed by their title block'}</span></div>
+  ${S.project.buildings.map(b => `<div class="tw"><table class="cov">
+    <thead><tr><th>${esc(b.name)}${b.copies > 1 ? ` <span class="muted">× ${b.copies}</span>` : ''}</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}<th>Other</th></tr></thead>
+    <tbody>${b.floors.map(f => `<tr><td>${esc(f.name)}</td>${cols.map(c => {
+      const got = at(f.id, c.key);
+      return `<td>${got.length ? got.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip ${s.classify_status === 'needs_review' ? 'medium' : 'ok'}">${esc(s.drg_no || `p.${s.page_no}`)}</a>`).join(' ') : '<span class="muted small">Missing</span>'}</td>`;
+    }).join('')}<td>${other.filter(s => s.floor_id === f.id).map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip" title="${esc(typeLabel(s.sheet_type))}">${esc(s.drg_no || `p.${s.page_no}`)}</a>`).join(' ')}</td></tr>`).join('')}</tbody>
+  </table></div>`).join('')}
+  ${loose.length ? `<div class="pad small stack"><b>Not placed yet</b><div class="row">${loose.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip medium">${esc(s.drg_no || `${s.filename} p.${s.page_no}`)}</a>`).join('')}</div><span class="muted">Open each one and pick its type and floor.</span></div>` : ''}`;
 }
 
 function showSheet(id) {
   const s = S.upSheets?.[id], el = $('#sheetView'); if (!el) return;
   S.viewers.forEach(v => v.destroy()); S.viewers = [];
   if (!s || s.status !== 'ready') { el.hidden = true; return; }
+  const canEdit = ['owner', 'editor'].includes(S.project.role);
+  const meta = [s.drg_no, s.revision, s.scale_text && `scale ${s.scale_text}`, s.drawn_on].filter(Boolean).map(esc).join(' · ');
   el.hidden = false;
-  el.innerHTML = `<div class="hd"><h2>${esc(s.filename)} · page ${s.page_no}</h2><button class="btn sm" id="closeSheet">Close</button></div><div id="sheetVw" style="height:62vh"></div>`;
+  el.innerHTML = `<div class="hd"><div><h2>${esc(s.title || `${s.filename} · page ${s.page_no}`)}</h2><div class="small muted">${meta || esc(s.filename)}</div></div><button class="btn sm" id="closeSheet">Close</button></div>
+    ${s.classify_note ? `<div class="pad small"><div class="note warn">${esc(s.classify_note)}</div></div>` : ''}
+    <form class="pad row small" id="placeForm">
+      <label class="stack small">Type<select class="f" name="sheet_type" ${canEdit ? '' : 'disabled'}><option value="">Not known</option>${(S.sheetTypes || []).map(t => `<option value="${t.key}" ${t.key === s.sheet_type ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label>
+      <label class="stack small">Floor<select class="f" name="floor_id" ${canEdit ? '' : 'disabled'}><option value="">Not known</option>${floorsList().map(f => `<option value="${f.id}" ${f.id === s.floor_id ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select></label>
+      ${canEdit ? `<button class="btn pri sm" type="submit">${s.classify_status === 'confirmed' ? 'Save' : 'Confirm'}</button>` : ''}
+      <span class="muted">${{ auto: 'Read from the title block', needs_review: 'Needs you', confirmed: 'Checked by a person' }[s.classify_status] || ''}</span>
+    </form>
+    <div id="sheetVw" style="height:62vh"></div>`;
   S.viewers.push(new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url }));
   $('#closeSheet').addEventListener('click', () => { S.viewers.forEach(v => v.destroy()); S.viewers = []; el.hidden = true; history.replaceState(null, '', `${P}upload`); });
+  $('#placeForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector('button'); btn.disabled = true;
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${id}`, { sheet_type: f.sheet_type.value || null, floor_id: f.floor_id.value || null }, 'PATCH');
+      S.upSheets[id] = { ...S.upSheets[id], ...r };
+      toast('Saved'); refreshUploads(); showSheet(id);
+    } catch (err) { btn.disabled = false; toast(err.message); }
+  });
   el.scrollIntoView({ block: 'nearest' });
 }
 

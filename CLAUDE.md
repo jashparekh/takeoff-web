@@ -30,10 +30,14 @@ Product rules (non-negotiable):
 - `app/api/compare.py` — notebook comparison and automatic issues.
 - `app/api/uploads.py` — `POST /api/projects/{pid}/uploads` (editor; multipart `files`; checks size and `%PDF-` only,
   never opens the PDF; same SHA-256 → existing upload), `GET …/uploads`, `GET …/sheets`, `GET …/sheets/{id}/thumb.png|
-  display.png` (302 to a 10-minute storage link).
+  display.png` (302 to a 10-minute storage link), `PATCH …/sheets/{id}` (editor: `sheet_type`, `floor_id`; marks the sheet
+  confirmed and writes `corrections`), `GET /api/sheet-types`.
 - `app/pipeline/` — worker (`arq app.pipeline.jobs.WorkerSettings`). `stages.py`: `ingest` (pages → `sheets`, a page
   already in the project by render fingerprint is skipped) → `render` (300 dpi viewer PNG, thumbnail, 300 dpi grayscale
-  for OCR). Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
+  for OCR) and `classify` (`classify.py`: title block from the PDF text layer → drawing no., title, revision, scale,
+  date; sheet type from title keywords; floor by matching "SECOND FLOOR" / "2ND FLR" / "SF" to the project's floor
+  names). Unclear type or floor → `needs_review` with a plain note; a `confirmed` sheet is never re-read. Sheets with no
+  text layer (scans) need OCR, not built yet. Bump `CLASSIFY_VERSION` when the reader changes. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
   pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
 - `app/storage.py` — S3 API (Spaces / S3Mock); keys `p/{project}/u/{upload}/original.pdf`, `p/{project}/s/{sheet}/…`.

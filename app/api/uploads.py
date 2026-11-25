@@ -11,11 +11,13 @@ from typing import Annotated, Callable
 
 import anyio
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ..auth.deps import CurrentUser, Db, project_role
-from ..db.models import Project, Sheet, Upload
+from ..db.models import Building, Correction, Floor, Project, Sheet, Upload
+from ..pipeline.classify import COVERAGE_TYPES, TYPE_LABELS
 from ..settings import get_settings
 from ..storage import Storage, get_storage, upload_key
 
@@ -68,8 +70,11 @@ def sheet_dict(s: Sheet, slug: str) -> dict:
     base = f'/api/projects/{slug}/sheets/{s.id}'
     ready = s.status == 'ready'
     return dict(id=str(s.id), upload_id=str(s.upload_id), page_no=s.page_no, status=s.status, error=s.error,
-                width_pt=s.width_pt, height_pt=s.height_pt, sheet_type=s.sheet_type, drg_no=s.drg_no,
-                title=s.title, thumb_url=f'{base}/thumb.png' if ready else None,
+                width_pt=s.width_pt, height_pt=s.height_pt, sheet_type=s.sheet_type,
+                floor_id=str(s.floor_id) if s.floor_id else None, drg_no=s.drg_no, title=s.title,
+                revision=s.revision, scale_text=s.scale_text, drawn_on=s.drawn_on,
+                classify_status=s.classify_status, classify_note=s.classify_note,
+                thumb_url=f'{base}/thumb.png' if ready else None,
                 image_url=f'{base}/display.png' if ready else None)
 
 
@@ -125,15 +130,56 @@ def list_sheets(p: Viewer, db: Db):
     return [dict(sheet_dict(s, p.slug), filename=s.upload.filename) for s in ss]
 
 
+@router.get('/api/sheet-types')
+def sheet_types():
+    """Sheet types in display order; `coverage` marks the ones every floor needs."""
+    return [dict(key=k, label=v, coverage=k in COVERAGE_TYPES) for k, v in TYPE_LABELS.items()]
+
+
+class SheetPatch(BaseModel):
+    sheet_type: str | None = None
+    floor_id: uuid.UUID | None = None
+    confirm: bool = True               # what the person sees is now right; the reader won't change it again
+
+
+def own_sheet(db, p: Project, sheet_id: str) -> Sheet:
+    try:
+        s = db.get(Sheet, uuid.UUID(sheet_id))
+    except ValueError:
+        s = None
+    if s is None or s.project_id != p.id:
+        raise HTTPException(404)
+    return s
+
+
+@router.patch('/api/projects/{pid}/sheets/{sheet_id}')
+def correct_sheet(p: Editor, sheet_id: str, req: SheetPatch, user: CurrentUser, db: Db):
+    """Set a sheet's type and floor. Every change is recorded in `corrections`."""
+    s = own_sheet(db, p, sheet_id)
+    sent = req.model_fields_set
+    if 'sheet_type' in sent and req.sheet_type is not None and req.sheet_type not in TYPE_LABELS:
+        raise HTTPException(422, 'Unknown sheet type')
+    if 'floor_id' in sent and req.floor_id is not None:
+        ok = db.scalar(select(Floor.id).join(Building).where(Floor.id == req.floor_id, Building.project_id == p.id))
+        if not ok:
+            raise HTTPException(422, "That floor is not in this project")
+    for name in ('sheet_type', 'floor_id'):
+        if name in sent and getattr(s, name) != getattr(req, name):
+            old, new = getattr(s, name), getattr(req, name)
+            db.add(Correction(project_id=p.id, sheet_id=s.id, field=name, user_id=user.id,
+                              old_value=None if old is None else str(old), new_value=None if new is None else str(new)))
+            setattr(s, name, new)
+    if req.confirm:
+        s.classify_status, s.classify_note = 'confirmed', None
+    db.flush()
+    return dict(sheet_dict(s, p.slug), filename=s.upload.filename)
+
+
 @router.get('/api/projects/{pid}/sheets/{sheet_id}/{name}')
 def sheet_image(p: Viewer, sheet_id: str, name: str, db: Db, storage: Store):
     """Redirect to a short-lived link to the sheet's image (the bucket is private)."""
     keys = {'thumb.png': 'thumb_key', 'display.png': 'display_key'}
-    try:
-        s = db.get(Sheet, uuid.UUID(sheet_id)) if name in keys else None
-    except ValueError:
-        s = None
-    key = getattr(s, keys[name], None) if s is not None and s.project_id == p.id else None
+    key = getattr(own_sheet(db, p, sheet_id), keys[name]) if name in keys else None
     if not key:
         raise HTTPException(404)
     return RedirectResponse(storage.url(key), status_code=302, headers={'Cache-Control': 'private, max-age=300'})

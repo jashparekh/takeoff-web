@@ -179,7 +179,7 @@ def test_sweep_finds_work_a_dead_worker_left(client, session, proj, storage, que
     post(client, ('sched.pdf', SCHED1))
     a, b = queued
     t = stages.now()
-    assert stale_work(session, t) == ([], [])                               # just queued: the queue has them
+    assert stale_work(session, t) == ([], [], [])                           # just queued: the queue has them
     later = t + timedelta(minutes=3)
     assert set(stale_work(session, later)[0]) == {a, b}                     # never picked up
     with pytest.raises(RuntimeError):
@@ -192,5 +192,104 @@ def test_sweep_finds_work_a_dead_worker_left(client, session, proj, storage, que
     session.get(Upload, a).status = 'processing'
     session.get(Upload, b).status = 'done'
     session.commit()
-    assert stale_work(session, t + timedelta(seconds=60)) == ([], [])       # still within the time a job may take
-    assert stale_work(session, t + timedelta(seconds=JOB_TIMEOUT + 61)) == ([a], [])
+    assert stale_work(session, t + timedelta(seconds=60)) == ([], [], [])   # still within the time a job may take
+    assert stale_work(session, t + timedelta(seconds=JOB_TIMEOUT + 61)) == ([a], [], [])
+
+
+SCHED2 = (SRC / '260919_SF_BEAM SCHEDULE -02.pdf').read_bytes()
+SLAB_B = (SRC / '260919_SF_BOTTOM SLAB REINFORCEMENT LAYOUT.pdf').read_bytes()
+SLAB_T = (SRC / '260919_SF_TOP SLAB REINFORCEMENT LAYOUT.pdf').read_bytes()
+
+
+@pytest.fixture
+def floors(session, proj):
+    from app.db.models import Building, Floor
+    b = Building(project_id=proj.id, name='Main building', copies=1, sort=0)
+    b.floors = [Floor(name=n, sort=i) for i, n in enumerate(['First floor', 'Second floor', 'Third floor'])]
+    session.add(b)
+    session.flush()
+    return {f.name: f for f in b.floors}
+
+
+def test_classify_worklounge(client, session, proj, floors, storage, queued):
+    """Golden test (plan M1 acceptance): the five Work Lounge PDFs get the right type, floor and title block."""
+    sign_in(client, 'new@example.com')
+    for name, data in [('260919_SF_BEAM LAYOUT.pdf', LAYOUT), ('sched1.pdf', SCHED1), ('sched2.pdf', SCHED2),
+                       ('bottom.pdf', SLAB_B), ('top.pdf', SLAB_T)]:
+        post(client, (name, data))
+    for uid in queued:
+        for sid in stages.ingest(session, storage, uid):
+            stages.classify(session, storage, sid)
+    got = {s['drg_no']: s for s in client.get('/api/projects/site-b/sheets').json()}
+    assert {k: v['sheet_type'] for k, v in got.items()} == {
+        'MC-SD-07': 'beam_layout', 'MC-SD-06-01': 'beam_schedule', 'MC-SD-06-02': 'beam_schedule',
+        'MC-SD-06-04': 'slab_bottom', 'MC-SD-06-05': 'slab_top'}
+    second = str(floors['Second floor'].id)
+    assert all(s['floor_id'] == second and s['classify_status'] == 'auto' for s in got.values())
+    lay = got['MC-SD-07']
+    assert (lay['title'], lay['revision'], lay['scale_text'], lay['drawn_on']) == \
+        ('SECOND FLOOR SHUTTERING LAYOUT', 'R0', '1:100', '16.09.2026')
+
+
+def test_unclear_sheet_needs_review_and_a_person_can_fix_it(client, session, proj, floors, storage, queued):
+    sign_in(client, 'new@example.com')
+    # A page with no text layer (an image saved as PDF), like a scan.
+    buf = io.BytesIO()
+    Image.new('RGB', (842, 595), 'white').save(buf, 'PDF')
+    post(client, ('scan.pdf', buf.getvalue()))
+    sid = stages.ingest(session, storage, queued[0])[0]
+    stages.classify(session, storage, sid)
+    s = client.get('/api/projects/site-b/sheets').json()[0]
+    assert s['classify_status'] == 'needs_review'
+    assert s['classify_note'] == 'This sheet has no readable text, so its title block could not be read.'
+    assert s['sheet_type'] is None and s['floor_id'] is None
+
+    third = str(floors['Third floor'].id)
+    r = client.patch(f'/api/projects/site-b/sheets/{sid}', json=dict(sheet_type='footing', floor_id=third))
+    assert r.status_code == 200
+    assert (r.json()['sheet_type'], r.json()['floor_id'], r.json()['classify_status']) == ('footing', third, 'confirmed')
+    from app.db.models import Correction
+    assert {c.field for c in session.scalars(select(Correction))} == {'sheet_type', 'floor_id'}
+
+    # A confirmed sheet is never changed by the reader again, even when the floors change.
+    from app.db.models import Floor
+    session.add(Floor(building_id=floors['First floor'].building_id, name='Fourth floor', sort=9))
+    session.flush()
+    stages.classify(session, storage, sid)
+    assert session.get(Sheet, sid).sheet_type == 'footing'
+
+    assert client.patch(f'/api/projects/site-b/sheets/{sid}', json=dict(sheet_type='bogus')).status_code == 422
+    other = Project(slug='other', name='Other', meta_json={})
+    session.add(other)
+    session.flush()
+    from app.db.models import Building
+    ob = Building(project_id=other.id, name='X', sort=0)
+    ob.floors = [Floor(name='Ground', sort=0)]
+    session.add(ob)
+    session.flush()
+    r = client.patch(f'/api/projects/site-b/sheets/{sid}', json=dict(floor_id=str(ob.floors[0].id)))
+    assert r.status_code == 422
+
+
+def test_viewer_cannot_correct(client, session, proj, floors, storage, queued):
+    sign_in(client, 'new@example.com')
+    post(client, ('layout.pdf', LAYOUT))
+    sid = stages.ingest(session, storage, queued[0])[0]
+    client.cookies.clear()
+    sign_in(client, 'engineer@firm.in')
+    assert client.patch(f'/api/projects/site-b/sheets/{sid}', json=dict(sheet_type='footing')).status_code == 403
+    assert [t['key'] for t in client.get('/api/sheet-types').json()][:4] == \
+        ['beam_layout', 'beam_schedule', 'slab_bottom', 'slab_top']
+
+
+def test_floor_from_file_name_is_flagged(client, session, proj, floors, storage, queued):
+    """The title says the floor; when only the file name does, the sheet is placed but marked for review."""
+    from app.pipeline.classify import classify
+    from app.pipeline.pdf import TextLine
+    lines = [TextLine('MC-SD-09', .85, .87, .9, .88), TextLine('BEAM LAYOUT', .82, .82, .9, .83)]
+    fl = [(f.id, f.name) for f in floors.values()]
+    r = classify(lines, fl, '260919_SF_BEAM LAYOUT.pdf')
+    assert r.sheet_type == 'beam_layout' and r.floor_id == floors['Second floor'].id
+    assert r.status == 'needs_review' and 'file name' in r.note
+    r = classify(lines, fl, 'layout.pdf')
+    assert r.floor_id is None and 'does not name a floor' in r.note

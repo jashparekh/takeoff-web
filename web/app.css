@@ -288,3 +288,9 @@ label.stack>input.f{width:100%}
 .thumb img,.thumb .ph2{width:100%;aspect-ratio:1.414;object-fit:contain;background:#fff;border-radius:4px;display:block}
 .thumb .ph2{background:var(--line)}
 .thumb.off{cursor:default}
+table.cov td,table.cov th{white-space:nowrap}
+table.cov td:first-child{color:var(--fg2)}
+table.cov a.chip{text-decoration:none}
+#placeForm{align-items:flex-end;border-bottom:1px solid var(--line)}
+#placeForm select.f{min-width:170px}
+.thumb .small.muted{min-height:1.2em}
