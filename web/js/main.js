@@ -702,14 +702,14 @@ async function refreshUploads(openSheet) {
   if (PID !== pid || S.view !== 'upload' || !$('#ups')) return;
   S.uploads = ups;
   S.upSheets = Object.fromEntries(ups.flatMap(u => u.sheets.map(s => [s.id, { ...s, filename: u.filename }])));
-  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status) || !s.classify_status));
+  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status) || !s.classify_status || (s.sheet_type && !s.scale_status)));
   $('#upState').textContent = busy ? 'Working… this page updates by itself' : '';
   $('#ups').innerHTML = ups.length ? ups.map(u => `<div class="upl stack">
     <div class="row between"><span><b>${esc(u.filename)}</b> <span class="small muted">${mb(u.size_bytes)}${u.pages != null ? ` · ${u.pages} page${u.pages === 1 ? '' : 's'}` : ''}${u.pages != null && u.new_sheets < u.pages ? ` · ${u.pages - u.new_sheets} already in the project` : ''}</span></span>${chip(UP_STATUS[u.status])}</div>
     ${u.error ? `<div class="note warn">${esc(u.error)}</div>` : ''}
     ${u.sheets.length ? `<div class="thumbs">${u.sheets.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="thumb ${s.status === 'ready' ? '' : 'off'}" aria-label="Page ${s.page_no}">
       ${s.thumb_url ? `<img src="${s.thumb_url}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
-      <span class="row between small"><span>${s.drg_no ? esc(s.drg_no) : `Page ${s.page_no}`}</span>${s.status === 'ready' ? (s.classify_status === 'needs_review' ? chip(['Check', 'medium']) : '') : chip(SHEET_STATUS[s.status])}</span>
+      <span class="row between small"><span>${s.drg_no ? esc(s.drg_no) : `Page ${s.page_no}`}</span>${s.status === 'ready' ? (needsYou(s) ? chip(['Check', 'medium']) : '') : chip(SHEET_STATUS[s.status])}</span>
       <span class="small muted">${esc(sheetPlace(s))}</span></a>`).join('')}</div>` : ''}
   </div>`).join('') : '<div class="muted small">Nothing uploaded yet.</div>';
   renderCoverage();
@@ -717,6 +717,8 @@ async function refreshUploads(openSheet) {
   if (busy) refreshUploads.t = setTimeout(() => refreshUploads(), 3000);
 }
 
+const SCALE_CHECK = ['differs', 'borrowed', 'unchecked'];
+const needsYou = s => s.classify_status === 'needs_review' || SCALE_CHECK.includes(s.scale_status);
 const typeLabel = k => (S.sheetTypes || []).find(t => t.key === k)?.label || (k ? k.replace(/_/g, ' ') : '');
 const floorsList = () => (S.project.buildings || []).flatMap(b => b.floors.map(f => ({ ...f, building: b.name, label: S.project.buildings.length > 1 ? `${b.name} · ${f.name}` : f.name })));
 const floorLabel = id => floorsList().find(f => f.id === id)?.label || '';
@@ -734,18 +736,32 @@ function renderCoverage() {
   const cols = S.sheetTypes.filter(t => t.coverage);
   const at = (fid, type) => sheets.filter(s => s.floor_id === fid && s.sheet_type === type);
   const loose = sheets.filter(s => s.classify_status && (!s.floor_id || !s.sheet_type));
-  const check = sheets.filter(s => s.classify_status === 'needs_review');
+  const check = sheets.filter(needsYou);
   const other = sheets.filter(s => s.floor_id && s.sheet_type && !cols.some(c => c.key === s.sheet_type));
   el.hidden = false;
-  el.innerHTML = `<div class="hd"><h2>Coverage</h2><span class="small muted">${check.length ? `${check.length} sheet${check.length === 1 ? '' : 's'} to check` : 'Sheets are placed by their title block'}</span></div>
+  el.innerHTML = `<div class="hd"><h2>Coverage</h2><span class="small muted">${check.length ? `${check.length} sheet${check.length === 1 ? '' : 's'} to check` : 'Sheets are placed by their title block and their scale is checked'}</span></div>
   ${S.project.buildings.map(b => `<div class="tw"><table class="cov">
     <thead><tr><th>${esc(b.name)}${b.copies > 1 ? ` <span class="muted">× ${b.copies}</span>` : ''}</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}<th>Other</th></tr></thead>
     <tbody>${b.floors.map(f => `<tr><td>${esc(f.name)}</td>${cols.map(c => {
       const got = at(f.id, c.key);
-      return `<td>${got.length ? got.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip ${s.classify_status === 'needs_review' ? 'medium' : 'ok'}">${esc(s.drg_no || `p.${s.page_no}`)}</a>`).join(' ') : '<span class="muted small">Missing</span>'}</td>`;
+      return `<td>${got.length ? got.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip ${needsYou(s) ? 'medium' : 'ok'}" title="${esc(SCALE_CHECK.includes(s.scale_status) ? 'Scale to check' : '')}">${esc(s.drg_no || `p.${s.page_no}`)}</a>`).join(' ') : '<span class="muted small">Missing</span>'}</td>`;
     }).join('')}<td>${other.filter(s => s.floor_id === f.id).map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip" title="${esc(typeLabel(s.sheet_type))}">${esc(s.drg_no || `p.${s.page_no}`)}</a>`).join(' ')}</td></tr>`).join('')}</tbody>
   </table></div>`).join('')}
   ${loose.length ? `<div class="pad small stack"><b>Not placed yet</b><div class="row">${loose.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="chip medium">${esc(s.drg_no || `${s.filename} p.${s.page_no}`)}</a>`).join('')}</div><span class="muted">Open each one and pick its type and floor.</span></div>` : ''}`;
+}
+
+function scaleBlock(s, canEdit) {
+  if (!s.scale_status || s.scale_status === 'not_needed') return s.sheet_type && !s.scale_status ? '<div class="pad small muted">Checking the scale…</div>' : '';
+  const label = { ok: ['Scale checked', 'ok'], differs: ['Scale differs', 'medium'], borrowed: ['Scale borrowed', 'medium'], unchecked: ['Scale not checked', 'medium'], confirmed: ['Scale confirmed', 'ok'] }[s.scale_status];
+  const shown = s.scale_ratio ? `1:${s.scale_ratio}` : '';
+  return `<form class="pad small stack" id="scaleForm">
+    <div class="row">${chip(label)}<span>${shown ? `In use: <b class="mono">${shown}</b>` : 'No scale yet'}${s.scale_text ? ` · printed ${esc(s.scale_text)}` : ''}</span></div>
+    ${s.scale_note ? `<div class="${SCALE_CHECK.includes(s.scale_status) ? 'note warn' : 'muted'}">${esc(s.scale_note)}</div>` : ''}
+    ${canEdit && s.scale_status !== 'ok' ? `<div class="row">
+      ${s.pt_per_in && s.scale_status !== 'confirmed' ? `<button class="btn sm pri" name="accept" type="submit">Use ${shown}</button><span class="muted">or</span>` : ''}
+      <label class="row">Scale is <input class="f mono" name="ratio" style="width:90px" placeholder="1:100" value="${s.scale_status === 'confirmed' ? shown : ''}"></label>
+      <button class="btn sm" name="set" type="submit">Save scale</button></div>` : ''}
+  </form>`;
 }
 
 function showSheet(id) {
@@ -761,11 +777,22 @@ function showSheet(id) {
       <label class="stack small">Type<select class="f" name="sheet_type" ${canEdit ? '' : 'disabled'}><option value="">Not known</option>${(S.sheetTypes || []).map(t => `<option value="${t.key}" ${t.key === s.sheet_type ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label>
       <label class="stack small">Floor<select class="f" name="floor_id" ${canEdit ? '' : 'disabled'}><option value="">Not known</option>${floorsList().map(f => `<option value="${f.id}" ${f.id === s.floor_id ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select></label>
       ${canEdit ? `<button class="btn pri sm" type="submit">${s.classify_status === 'confirmed' ? 'Save' : 'Confirm'}</button>` : ''}
-      <span class="muted">${{ auto: 'Read from the title block', needs_review: 'Needs you', confirmed: 'Checked by a person' }[s.classify_status] || ''}</span>
+      <span class="muted">${{ auto: `Read from the title block${s.text_source === 'ocr' ? ' (by OCR)' : ''}`, needs_review: 'Needs you', confirmed: 'Checked by a person' }[s.classify_status] || ''}</span>
     </form>
+    ${scaleBlock(s, canEdit)}
     <div id="sheetVw" style="height:62vh"></div>`;
   S.viewers.push(new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url }));
   $('#closeSheet').addEventListener('click', () => { S.viewers.forEach(v => v.destroy()); S.viewers = []; el.hidden = true; history.replaceState(null, '', `${P}upload`); });
+  $('#scaleForm')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, n = parseInt(String(f.ratio.value).replace(/^\s*1\s*:\s*/, ''), 10);
+    const body = e.submitter?.name === 'accept' ? { accept_scale: true } : { scale_ratio: n };
+    if (!body.accept_scale && !(n > 0)) { toast('Enter the scale as 1:N, for example 1:100'); f.ratio.focus(); return; }
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${id}`, body, 'PATCH');
+      S.upSheets[id] = { ...S.upSheets[id], ...r }; toast('Scale saved'); refreshUploads(); showSheet(id);
+    } catch (err) { toast(err.message); }
+  });
   $('#placeForm').addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target, btn = f.querySelector('button'); btn.disabled = true;

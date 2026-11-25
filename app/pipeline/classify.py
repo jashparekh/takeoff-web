@@ -121,6 +121,12 @@ def sheet_type(title: str | None) -> str | None:
     return None
 
 
+def _fix(text: str) -> str:
+    for rx, rep in OCR_FIXES:
+        text = rx.sub(rep, text)
+    return text
+
+
 @dataclass
 class Result:
     title_block: TitleBlock
@@ -130,12 +136,18 @@ class Result:
     note: str | None
 
 
-def classify(lines: list[TextLine], floors: list[tuple[object, str]], filename: str = '') -> Result:
-    """`floors`: (floor id, floor name) for every floor in the project, all buildings."""
+OCR_FIXES = [(re.compile(r'\bR[O]\b'), 'R0')]            # Tesseract reads revision R0 as RO
+
+
+def classify(lines: list[TextLine], floors: list[tuple[object, str]], filename: str = '', ocr: bool = False) -> Result:
+    """`floors`: (floor id, floor name) for every floor in the project, all buildings. `ocr`: the lines came from
+    OCR, not the PDF's text layer."""
+    if ocr:
+        lines = [TextLine(_fix(t.text), t.x0, t.y0, t.x1, t.y1) for t in lines]
     tb = read_title_block(lines)
     notes = []
     if not lines:
-        notes.append('This sheet has no readable text, so its title block could not be read.')
+        notes.append('No text could be read on this sheet, so its title block could not be read.')
     elif not tb.lines:
         notes.append('No title block found.')
     st = sheet_type(tb.title) if tb.title else None

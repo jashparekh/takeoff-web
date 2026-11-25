@@ -11,7 +11,7 @@ from typing import Annotated, Callable
 
 import anyio
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
@@ -73,7 +73,10 @@ def sheet_dict(s: Sheet, slug: str) -> dict:
                 width_pt=s.width_pt, height_pt=s.height_pt, sheet_type=s.sheet_type,
                 floor_id=str(s.floor_id) if s.floor_id else None, drg_no=s.drg_no, title=s.title,
                 revision=s.revision, scale_text=s.scale_text, drawn_on=s.drawn_on,
-                classify_status=s.classify_status, classify_note=s.classify_note,
+                classify_status=s.classify_status, classify_note=s.classify_note, text_source=s.text_source,
+                pt_per_in=s.pt_per_in, scale_ratio=round(72 / s.pt_per_in) if s.pt_per_in else None,
+                scale_status=s.scale_status, scale_error=s.scale_error, scale_checks=s.scale_checks,
+                scale_note=s.scale_note,
                 thumb_url=f'{base}/thumb.png' if ready else None,
                 image_url=f'{base}/display.png' if ready else None)
 
@@ -140,6 +143,8 @@ class SheetPatch(BaseModel):
     sheet_type: str | None = None
     floor_id: uuid.UUID | None = None
     confirm: bool = True               # what the person sees is now right; the reader won't change it again
+    accept_scale: bool = False         # the scale shown (measured or borrowed) is right
+    scale_ratio: int | None = Field(None, ge=1, le=10000)   # or: the scale is 1:N
 
 
 def own_sheet(db, p: Project, sheet_id: str) -> Sheet:
@@ -163,14 +168,31 @@ def correct_sheet(p: Editor, sheet_id: str, req: SheetPatch, user: CurrentUser, 
         ok = db.scalar(select(Floor.id).join(Building).where(Floor.id == req.floor_id, Building.project_id == p.id))
         if not ok:
             raise HTTPException(422, "That floor is not in this project")
+    def record(name, old, new):
+        db.add(Correction(project_id=p.id, sheet_id=s.id, field=name, user_id=user.id,
+                          old_value=None if old is None else str(old), new_value=None if new is None else str(new)))
     for name in ('sheet_type', 'floor_id'):
         if name in sent and getattr(s, name) != getattr(req, name):
-            old, new = getattr(s, name), getattr(req, name)
-            db.add(Correction(project_id=p.id, sheet_id=s.id, field=name, user_id=user.id,
-                              old_value=None if old is None else str(old), new_value=None if new is None else str(new)))
-            setattr(s, name, new)
-    if req.confirm:
+            record(name, getattr(s, name), getattr(req, name))
+            setattr(s, name, getattr(req, name))
+            if name == 'sheet_type' and s.scale_status != 'confirmed':
+                s.scale_status = None          # the worker checks the scale again for the new type
+    if req.confirm and sent & {'sheet_type', 'floor_id', 'confirm'}:
         s.classify_status, s.classify_note = 'confirmed', None
+    if req.scale_ratio is not None or req.accept_scale:
+        if req.scale_ratio is not None:
+            new = 72 / req.scale_ratio
+        elif s.pt_per_in:
+            new = s.pt_per_in
+        else:
+            raise HTTPException(422, 'There is no scale to accept; enter it as 1:N.')
+        record('scale', f'1:{round(72 / s.pt_per_in)}' if s.pt_per_in else None, f'1:{round(72 / new)}')
+        s.pt_per_in, s.scale_status = new, 'confirmed'
+        s.scale_note = f'Scale 1:{round(72 / new)} confirmed by {user.name or user.email}.'
+        db.flush()
+        from ..pipeline.stages import borrow             # sister sheets with no dimensions follow a confirmed scale
+        for other in db.scalars(select(Sheet).where(Sheet.project_id == p.id, Sheet.scale_status.in_(('unchecked', 'borrowed')))):
+            borrow(db, other)
     db.flush()
     return dict(sheet_dict(s, p.slug), filename=s.upload.filename)
 

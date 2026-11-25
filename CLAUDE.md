@@ -36,8 +36,15 @@ Product rules (non-negotiable):
   already in the project by render fingerprint is skipped) → `render` (300 dpi viewer PNG, thumbnail, 300 dpi grayscale
   for OCR) and `classify` (`classify.py`: title block from the PDF text layer → drawing no., title, revision, scale,
   date; sheet type from title keywords; floor by matching "SECOND FLOOR" / "2ND FLR" / "SF" to the project's floor
-  names). Unclear type or floor → `needs_review` with a plain note; a `confirmed` sheet is never re-read. Sheets with no
-  text layer (scans) need OCR, not built yet. Bump `CLASSIFY_VERSION` when the reader changes. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
+  names). No title block in the text layer (scans, text as outlines) → Tesseract OCR of the corner (`ocr.py`,
+  `text_source='ocr'`). Unclear type or floor → `needs_review` with a plain note; a `confirmed` sheet is never re-read.
+  Then `calibrate` (`calibrate.py`, layouts/slabs/columns/footings only): OCR the feet-inch dimension strings, measure
+  each dimension line, and take the largest group agreeing within 2% (≥ 2 needed) as `pt_per_in`. Statuses: `ok`
+  (matches the printed scale), `differs` (pilot layout: printed 1:100, measures 1:119 — printed to fit A3), `borrowed`
+  (no usable dimensions; scale of a measured sheet with the same printed scale and paper size), `unchecked`,
+  `confirmed` (a person set it via `PATCH … {scale_ratio}` or `{accept_scale}`). Only `ok`/`confirmed` are settled.
+  Bump `CLASSIFY_VERSION` / `CALIBRATE_VERSION` when a reader changes. Tesseract is needed locally (`brew install
+  tesseract`) and is in the Docker image; OCR tests skip without it. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
   pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
 - `app/storage.py` — S3 API (Spaces / S3Mock); keys `p/{project}/u/{upload}/original.pdf`, `p/{project}/s/{sheet}/…`.

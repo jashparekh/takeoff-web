@@ -21,6 +21,8 @@ UPLOAD_STATUSES = ('queued', 'processing', 'done', 'failed')
 SHEET_STATUSES = ('queued', 'rendering', 'ready', 'needs_attention')
 JOB_STATUSES = ('queued', 'running', 'done', 'failed')
 CLASSIFY_STATUSES = ('auto', 'needs_review', 'confirmed')     # confirmed = a person set or checked it
+# ok: dimensions agree with the printed scale. differs / borrowed / unchecked: a person must look.
+SCALE_STATUSES = ('ok', 'differs', 'borrowed', 'unchecked', 'not_needed', 'confirmed')
 
 
 class Base(DeclarativeBase):
@@ -233,11 +235,18 @@ class Sheet(Base):
     drawn_on: Mapped[str | None] = mapped_column(String(32))          # date as printed in the title block
     classify_status: Mapped[str | None] = mapped_column(String(16))   # None until classify has run
     classify_note: Mapped[str | None] = mapped_column(Text)           # why it needs review, in plain words
+    text_source: Mapped[str | None] = mapped_column(String(8))        # pdf (text layer) | ocr — where the title came from
+    pt_per_in: Mapped[float | None] = mapped_column(Float)            # PDF points per real inch (scale in use)
+    scale_status: Mapped[str | None] = mapped_column(String(16))      # None until calibrate has run
+    scale_error: Mapped[float | None] = mapped_column(Float)          # measured / printed − 1
+    scale_checks: Mapped[int | None] = mapped_column(Integer)         # dimensions that agree with the scale in use
+    scale_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
     __table_args__ = (UniqueConstraint('project_id', 'page_hash'),
                       CheckConstraint(f"status IN {SHEET_STATUSES}", name='status_valid'),
-                      CheckConstraint(f"classify_status IN {CLASSIFY_STATUSES}", name='classify_status_valid'))
+                      CheckConstraint(f"classify_status IN {CLASSIFY_STATUSES}", name='classify_status_valid'),
+                      CheckConstraint(f"scale_status IN {SCALE_STATUSES}", name='scale_status_valid'))
 
 
 class Job(Base):

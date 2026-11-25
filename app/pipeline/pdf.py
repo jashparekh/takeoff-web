@@ -163,3 +163,19 @@ def rotate(t: TextLine, rot: int) -> TextLine:
     if rot == 270:
         return TextLine(t.text, t.y0, 1 - t.x1, t.y1, 1 - t.x0)
     return t
+
+
+def render_gray(path: str, page_no: int, dpi: int = OCR_DPI) -> tuple[Image.Image, int]:
+    """Grayscale render for OCR and measuring, as displayed. Returns the image and the dpi used (capped for huge
+    sheets)."""
+    with PDFIUM:
+        pdf = open_pdf(path)
+        try:
+            page = pdf[page_no - 1]
+            w, h = page_size(page)
+            d = dpi_for(w, h, dpi, OCR_MAX_PX)
+            img = page.render(scale=d / 72, grayscale=True).to_pil().convert('L')
+            page.close()
+            return img, d
+        finally:
+            pdf.close()
