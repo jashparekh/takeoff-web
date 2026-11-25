@@ -298,3 +298,14 @@ table.cov a.chip{text-decoration:none}
 .viewer .overlay line{stroke-width:2.2;stroke-linecap:round;opacity:.75;vector-effect:non-scaling-stroke}
 .viewer .overlay rect{fill:none;stroke:#2563EB;stroke-width:2;vector-effect:non-scaling-stroke}
 .sw{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+/* review */
+.progress{height:6px;background:var(--line);border-radius:4px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.rv .viewer{height:70vh}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+dl.kv dt{color:var(--muted)}
+dl.kv dd{margin:0}
+kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 4px;margin-left:4px;color:var(--muted)}
+.btn.pri kbd{color:inherit;border-color:rgba(255,255,255,.5)}
+.rvbtns .btn[disabled]{opacity:.5;cursor:not-allowed}

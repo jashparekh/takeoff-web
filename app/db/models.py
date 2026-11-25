@@ -273,11 +273,13 @@ class Job(Base):
 
 
 class Correction(Base):
-    """A person changed something the pipeline read (sheet type, floor…). Kept to measure and improve the readers."""
+    """A person changed something the pipeline read (sheet type, floor, scale, a member). Kept to measure and
+    improve the readers."""
     __tablename__ = 'corrections'
     id: Mapped[uuid.UUID] = pk()
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
     sheet_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('sheets.id', ondelete='CASCADE'), index=True)
+    member_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('members.id', ondelete='CASCADE'), index=True)
     field: Mapped[str] = mapped_column(String(64))
     old_value: Mapped[str | None] = mapped_column(Text)
     new_value: Mapped[str | None] = mapped_column(Text)

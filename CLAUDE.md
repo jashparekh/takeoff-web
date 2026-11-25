@@ -55,6 +55,11 @@ Product rules (non-negotiable):
   tesseract`) and is in the Docker image; OCR tests skip without it. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
   pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
+- `app/api/review.py` — Review (M2): `GET /api/projects/{pid}/review` (members still `auto`, least confident first,
+  plus counts), `PATCH …/members/{id}` (editor: `action` accept / reject / reopen; `name`, `label_b_in`, `label_d_in`;
+  `x1,y1,x2,y2` redraw, snapped to horizontal or vertical), `POST …/sheets/{id}/members` (add a missed beam). Every
+  change writes `corrections` (now with `member_id`). Frontend `#p/<slug>/review[/<member id>]`: keys A accept,
+  E edit, R redraw (click both ends on the sheet), X not on drawing, N / P next / back.
 - `app/storage.py` — S3 API (Spaces / S3Mock); keys `p/{project}/u/{upload}/original.pdf`, `p/{project}/s/{sheet}/…`.
 - `app/data/<project>/` — `project.json` (meta, sheets, per-sheet beam hotspots in PDF points),
   `inputs.json` (assumptions, beams, bars, chajja, slab openings), `issues.json`, `notebook.json` (site QS
@@ -81,7 +86,7 @@ Product rules (non-negotiable):
 
 Hash routes: `#signin[/expired]`, `#projects`, `#new`, and per project `#p/<slug>/<view>` where view is `overview`,
 `model[/B47]`, `drawings/<sheet>[/<beam>|/@x,y,zoom]`, `beams`, `beam/<name>`, `slab`, `issues`, `notebook`,
-`assumptions`, `upload[/<sheet id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
+`assumptions`, `upload[/<sheet id>]`, `review[/<member id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
 in-project links with the `P` prefix (`href="${P}beams"`). A project with no measured floor shows only Overview
 (buildings and floors) and Add drawings.
 
