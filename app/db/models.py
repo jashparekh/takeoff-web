@@ -24,6 +24,8 @@ CLASSIFY_STATUSES = ('auto', 'needs_review', 'confirmed')     # confirmed = a pe
 # ok: dimensions agree with the printed scale. differs / borrowed / unchecked: a person must look.
 SCALE_STATUSES = ('ok', 'differs', 'borrowed', 'unchecked', 'not_needed', 'confirmed')
 MEMBER_KINDS = ('beam', 'column', 'slab_panel')
+BAR_ROLES = ('Top through', 'Top main', 'Bottom through', 'Bottom extra', 'Extra top @ support')
+SPEC_KINDS = ('S', 'C')            # span, cantilever (engine's `kind`)
 # auto: read by the pipeline, not looked at. accepted / edited / added / rejected: a person decided (Review, M2).
 MEMBER_STATUSES = ('auto', 'accepted', 'edited', 'added', 'rejected')
 
@@ -246,6 +248,7 @@ class Sheet(Base):
     scale_note: Mapped[str | None] = mapped_column(Text)
     layout_version: Mapped[int | None] = mapped_column(Integer)       # layout reader version that produced members
     layout_note: Mapped[str | None] = mapped_column(Text)             # summary: labels found, members placed
+    schedule_version: Mapped[int | None] = mapped_column(Integer)     # schedule reader version that produced specs
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
     __table_args__ = (UniqueConstraint('project_id', 'page_hash'),
@@ -315,3 +318,46 @@ class Member(Base):
     created_at: Mapped[datetime] = created()
     __table_args__ = (CheckConstraint(f"kind IN {MEMBER_KINDS}", name='kind_valid'),
                       CheckConstraint(f"status IN {MEMBER_STATUSES}", name='status_valid'))
+
+
+class BeamSpec(Base):
+    """One beam (or cantilever part) as read off a schedule sheet: size, stirrups and bars (plan M3).
+    `source` says who read it: ocr (this reader), model (vision model, M3 PR 2) or person (Review)."""
+    __tablename__ = 'beam_specs'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    sheet_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sheets.id', ondelete='CASCADE'), index=True)
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('floors.id', ondelete='SET NULL'), index=True)
+    name: Mapped[str] = mapped_column(String(32))                       # B7, B7-cant, B74-cantL
+    kind: Mapped[str] = mapped_column(String(1), default='S')
+    b_in: Mapped[float | None] = mapped_column(Float)
+    D_in: Mapped[float | None] = mapped_column(Float)
+    D2_in: Mapped[float | None] = mapped_column(Float)                  # B49(9"X21"/24"): second depth
+    stirrup_dia: Mapped[int | None] = mapped_column(Integer)
+    stirrup_end_in: Mapped[float | None] = mapped_column(Float)
+    stirrup_mid_in: Mapped[float | None] = mapped_column(Float)
+    box: Mapped[list | None] = mapped_column(Json)                     # elevation crop [x0, y0, x1, y1] pt
+    tokens: Mapped[list | None] = mapped_column(Json)                  # callout text as read, for review
+    notes: Mapped[str | None] = mapped_column(Text)                    # what the reader was unsure about
+    source: Mapped[str] = mapped_column(String(16), default='ocr')
+    confidence: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(16), default='auto')    # as members: auto / accepted / edited / rejected
+    duplicate_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('beam_specs.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = created()
+    bars: Mapped[list[Bar]] = relationship(cascade='all, delete-orphan', order_by='Bar.sort')
+    __table_args__ = (CheckConstraint(f"kind IN {SPEC_KINDS}", name='kind_valid'),
+                      CheckConstraint(f"status IN {MEMBER_STATUSES}", name='status_valid'))
+
+
+class Bar(Base):
+    """A bar group on a beam: role (engine names), number and diameter; extra top bars may carry a drawn length."""
+    __tablename__ = 'bars'
+    id: Mapped[uuid.UUID] = pk()
+    spec_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('beam_specs.id', ondelete='CASCADE'), index=True)
+    role: Mapped[str] = mapped_column(String(32))
+    nos: Mapped[int] = mapped_column(Integer)
+    dia: Mapped[int] = mapped_column(Integer)
+    extra_top_in: Mapped[float | None] = mapped_column(Float)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (CheckConstraint(f"role IN {BAR_ROLES}", name='role_valid'),
+                      CheckConstraint('nos >= 1 AND dia > 0', name='bar_positive'))

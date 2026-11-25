@@ -55,6 +55,15 @@ Product rules (non-negotiable):
   frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
   corner the pilot missed). `python -m tools.golden_report` compares with the pilot (79 of 88 beams within 4 ft,
   median 0.1"; 25/25 columns); the misses mostly need schedule spans (M3).
+- `app/pipeline/schedule.py` — beam schedules (M3, OCR pass): names/dims and bar callouts are drawn in two lettering
+  widths (0.48 / 0.6 pt on the pilot), each rendered alone and OCR'd (callouts: 4 passes, voted); elevations = the
+  outline width whose rows sit over the most labels, split at supports; size-only labels next to a beam are its
+  cantilever parts. Roles by position: top callout not under a bracket → Top through, under an EQ/length bracket or at a
+  support → Extra top @ support (bracket = length), bottom left→right → Bottom through then Bottom extra, stirrup row →
+  dia, end and mid spacing. Stored in `beam_specs` + `bars` (source ocr, confidence = completeness); repeats on another
+  sheet are kept with `duplicate_of` and raise one Issue (pilot: B68–B73). Pilot baseline (`golden_report
+  --schedules`): 105 of 115 elevations, size 103, stirrups 69, bars 28, fully right 16 (14%) — OCR misses callouts
+  (73 of 77 bar errors); RapidOCR measured worse (8 vs 35). The vision pass (M3 PR 2) is meant to close the gap.
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
