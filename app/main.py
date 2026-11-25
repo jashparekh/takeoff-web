@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .api.projects import router as projects_router
+from .api.uploads import MAX_FILES_PER_REQUEST, router as uploads_router
 from .auth.routes import router as auth_router
 from .db.session import get_engine
 from .settings import get_settings
@@ -22,6 +23,7 @@ app = FastAPI(title='Takeoff', docs_url='/api/docs', openapi_url='/api/openapi.j
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(uploads_router)
 UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
 
@@ -33,6 +35,17 @@ async def same_origin_writes(request, call_next):
     allowed = {request.headers.get('host'), urlsplit(get_settings().app_url).netloc}
     if request.method in UNSAFE and origin and urlsplit(origin).netloc not in allowed:
         return JSONResponse({'detail': 'Cross-site request refused'}, status_code=403)
+    return await call_next(request)
+
+
+@app.middleware('http')
+async def body_size_limit(request, call_next):
+    """Refuse oversize requests before the multipart body is read and spooled to disk."""
+    limit = (get_settings().max_upload_mb * MAX_FILES_PER_REQUEST + 1) << 20
+    n = request.headers.get('content-length')
+    if n and n.isdigit() and int(n) > limit:
+        return JSONResponse({'detail': f'Upload too large (at most {get_settings().max_upload_mb} MB per file)'},
+                            status_code=413)
     return await call_next(request)
 
 

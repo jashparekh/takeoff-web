@@ -272,3 +272,19 @@ label.stack>input.f{width:100%}
   .side{flex-wrap:wrap}
   nav{order:3}
 }
+
+/* add drawings */
+.drop{cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.sendrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sendrow progress{width:140px}
+.sendrow .bad{color:var(--bad)}
+.sendrow .ok{color:var(--ok)}
+.upl{gap:10px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.upl:last-child{border-bottom:0;padding-bottom:0}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.thumb{display:flex;flex-direction:column;gap:6px;text-decoration:none;color:var(--fg2);border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--sunk)}
+.thumb:hover{border-color:var(--line2)}
+.thumb img,.thumb .ph2{width:100%;aspect-ratio:1.414;object-fit:contain;background:#fff;border-radius:4px;display:block}
+.thumb .ph2{background:var(--line)}
+.thumb.off{cursor:default}

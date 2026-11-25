@@ -6,3 +6,8 @@ alembic==1.20.1
 psycopg[binary]==3.3.9
 email-validator==2.4.0
 python-multipart==0.0.34
+pypdfium2==5.15.2
+pillow==13.0.0
+boto3==1.44.11
+arq==0.28.0
+redis==5.3.1

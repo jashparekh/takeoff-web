@@ -30,7 +30,7 @@ project in the database (imported from its JSON files), and `tests/test_engine.p
 
 | # | Decision | Recommendation | Why |
 |---|---|---|---|
-| D1 | PDF library licence | **Check PyMuPDF's AGPL now.** For a hosted product either buy an Artifex commercial licence or switch rendering/vector reading to `pypdfium2` (Apache/BSD) + `pdfplumber`/`pdfminer.six` for vectors | PyMuPDF is used everywhere in §4.1–4.5; swapping later is expensive |
+| D1 | PDF library licence | **Decided (Nov 2026): pypdfium2.** Sheets are drawn as PNG (300 dpi); sharp vector zoom later via pdf.js in the browser. Was: **Check PyMuPDF's AGPL now.** For a hosted product either buy an Artifex commercial licence or switch rendering/vector reading to `pypdfium2` (Apache/BSD) + `pdfplumber`/`pdfminer.six` for vectors | PyMuPDF is used everywhere in §4.1–4.5; swapping later is expensive |
 | D2 | Queue | **arq** (async, Redis) | FastAPI is async; arq has retries, job ids, cron; tiny |
 | D3 | ORM / migrations | **SQLAlchemy 2.0 + Alembic + psycopg 3** | Standard; Alembic needed from the first table |
 | D4 | OCR engine | **Tesseract 5** (`pytesseract`, `apt install tesseract-ocr`) as baseline; evaluate **RapidOCR (ONNX)** on the goldens in M2 | The pilot reached 72/93 with OCR alone; pick by measured recall, not by taste |

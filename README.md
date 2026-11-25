@@ -5,6 +5,7 @@ Web app for checking structural drawings and the steel, concrete and cement take
 Pilot project loaded: **Work Lounge, Hubballi**, second floor slab + beams (Manohar Consultants, R0 16.09.2026).
 
 ## Views
+- **Add drawings**: upload PDFs; each page becomes a sheet, drawn at 300 dpi and viewable as soon as the worker finishes. The same file or page is never processed twice.
 - **Sign in / Projects / New project**: email sign-in link, the projects you've been added to, and a form to start a project (buildings → floors) before its drawings arrive.
 - **3D model**: the measured floor's beams, slab and columns in 3D (zoom, orbit, pan, top/below presets), other floors ghosted. Click any member to see its quantities and the working; colour by element, steel per metre, site check or issues.
 - **Overview**: steel by bar size, concrete and cement, cost per sq ft, open questions.
@@ -25,10 +26,11 @@ python -m pytest -q tests
 ### Database and sign-in
 Projects are read from Postgres and every page needs sign-in:
 ```
-docker compose up -d db                      # Postgres 16 (also: redis, minio)
+docker compose up -d                         # Postgres 16, Redis 7, S3Mock (stands in for Spaces)
 cp .env.example .env                         # local values only
 alembic upgrade head
 python -m tools.import_pilot worklounge      # --replace to re-import
+arq app.pipeline.jobs.WorkerSettings         # in a second terminal: reads and draws uploaded PDFs
 createdb -h localhost -U takeoff takeoff_test
 TEST_DATABASE_URL=postgresql+psycopg://takeoff:takeoff@localhost:5432/takeoff_test python -m pytest -q tests
 ```
@@ -41,7 +43,9 @@ add a migration with `alembic revision --autogenerate -m "..."` (a test fails if
 
 ## Layout
 - `app/engine.py`: quantity engine (explained steps).
-- `app/main.py`: FastAPI app + static frontend. `app/api/`: projects API (database-backed, signed-in only).
+- `app/main.py`: FastAPI app + static frontend. `app/api/`: projects and uploads API (database-backed, signed-in only).
+- `app/pipeline/`: the background worker (arq): `stages.py` (ingest → render, idempotent), `pdf.py` (pypdfium2), `jobs.py`.
+- `app/storage.py`: S3 API storage (Spaces in production, S3Mock locally); private bucket, 10-minute links.
 - `app/data/<project>/`: `project.json` (sheets, hotspots), `inputs.json` (beams, bars, assumptions), `issues.json`, `notebook.json`, `drawings/*.svg`.
 - `web/`: no-build frontend (ES modules).
 - `tools/import_workbook.py`: imports the pilot workbook inputs.

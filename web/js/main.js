@@ -624,19 +624,102 @@ async function recalc() {
   index();
 }
 
-/* ---------- upload (next) ---------- */
-function upload() {
-  main.innerHTML = header('Add drawings', 'Coming next: upload a new project\'s PDFs and get the same views.') + `
-  <div class="grid g2"><section class="panel pad stack">
-    <div class="drop"><b style="color:var(--fg)">Drop structural PDFs here</b><span>Beam layout, beam schedules, slab layouts</span><button class="btn" disabled>Choose files</button></div>
-    <p class="small muted">Upload is switched off in this version. The Work Lounge pilot was read with the same steps the uploader will run.</p></section>
-  <section class="panel pad stack"><h2>What happens to an upload</h2><ol class="flow small">
-    <li>Each sheet is stored and shown here at full resolution, so you can zoom into any detail.</li>
-    <li>Beam names, sizes, spans and bar callouts are read from the layout and the schedules. Anything unreadable is listed for you to fill in, never guessed.</li>
-    <li>Drawings are cross-checked: sizes that disagree between sheets, missing beam numbers, repeated rows, missing grade or cover. These become Issues.</li>
-    <li>You confirm the values the drawings don't give. Nothing is calculated until every value is filled.</li>
-    <li>Quantities, bar schedules and costs appear with the working for every number, as in this pilot.</li>
-  </ol></section></div>`;
+/* ---------- add drawings ---------- */
+const UP_STATUS = { queued: ['Waiting', ''], processing: ['Reading', 'acc'], done: ['Read', 'ok'], failed: ['Could not read', 'high'] };
+const SHEET_STATUS = { queued: ['Waiting', ''], rendering: ['Drawing', 'acc'], ready: ['Ready', 'ok'], needs_attention: ['Needs attention', 'high'] };
+const chip = ([label, cls]) => `<span class="chip ${cls}">${label}</span>`;
+const mb = n => `${fx(n / 1048576, 1)} MB`;
+
+function upload(sheetId) {
+  const canEdit = ['owner', 'editor'].includes(S.project.role);
+  main.innerHTML = header('Add drawings', canEdit ? 'Upload the structural PDFs for this project: beam layouts, beam schedules, slab layouts.' : 'Drawings uploaded to this project.') + `
+  <div class="grid g-main">
+    <div class="stack">
+      ${canEdit ? `<section class="panel pad stack">
+        <label class="drop" id="drop"><b style="color:var(--fg)">Drop PDFs here</b><span>or</span><span class="btn">Choose files</span>
+          <input type="file" id="pick" accept="application/pdf,.pdf" multiple hidden></label>
+        <div id="sending" class="stack small"></div>
+        <p class="small muted">PDF only, up to 50 MB each. A file or page that is already in the project is not added again.</p>
+      </section>` : ''}
+      <section class="panel" id="sheetView" hidden></section>
+      <section class="panel"><div class="hd"><h2>Uploads</h2><span class="small muted" id="upState"></span></div><div id="ups" class="stack pad"><div class="muted small">Loading…</div></div></section>
+    </div>
+    <section class="panel pad stack"><h2>What happens to an upload</h2><ol class="flow small">
+      <li>Each page becomes a sheet, drawn at full resolution so you can zoom into any detail. <b>This part works now.</b></li>
+      <li>Next: each sheet's title block is read to tell layouts from schedules and to place it on a floor.</li>
+      <li>Beam names, sizes, spans and bar callouts are read from the layout and the schedules. Anything unreadable is listed for you to fill in, never guessed.</li>
+      <li>Drawings are cross-checked: sizes that disagree between sheets, missing beam numbers, repeated rows, missing grade or cover. These become Issues.</li>
+      <li>You confirm the values the drawings don't give. Nothing is calculated until every value is filled.</li>
+    </ol></section>
+  </div>`;
+  if (canEdit) {
+    const drop = $('#drop'), pick = $('#pick');
+    pick.addEventListener('change', () => { sendFiles([...pick.files]); pick.value = ''; });
+    ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => sendFiles([...e.dataTransfer.files]));
+  }
+  $('#ups').addEventListener('click', e => {
+    const t = e.target.closest('[data-sheet]'); if (!t) return;
+    e.preventDefault(); history.replaceState(null, '', `${P}upload/${t.dataset.sheet}`); showSheet(t.dataset.sheet);
+  });
+  refreshUploads(sheetId);
+}
+
+function sendFiles(files) {
+  for (const f of files) {
+    const row = document.createElement('div'); row.className = 'sendrow';
+    row.innerHTML = `<span class="grow">${esc(f.name)} <span class="muted">${mb(f.size)}</span></span><progress max="100" value="0"></progress><span class="st muted">Sending</span>`;
+    $('#sending').prepend(row);
+    const done = (msg, cls) => { row.querySelector('progress').remove(); const st = row.querySelector('.st'); st.textContent = msg; st.className = `st ${cls}`; };
+    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { done('Not a PDF', 'bad'); continue; }
+    if (f.size > 50 * 1048576) { done('Larger than 50 MB', 'bad'); continue; }
+    const fd = new FormData(); fd.append('files', f);
+    const x = new XMLHttpRequest();
+    x.open('POST', `/api/projects/${encodeURIComponent(PID)}/uploads`);
+    x.upload.onprogress = e => { if (e.lengthComputable) row.querySelector('progress').value = e.loaded / e.total * 100; };
+    x.onload = () => {
+      let body = {}; try { body = JSON.parse(x.responseText); } catch { }
+      if (x.status === 401) { S.me = null; go('#signin'); return; }
+      if (x.status >= 300) { done(typeof body.detail === 'string' ? body.detail : `Failed (${x.status})`, 'bad'); return; }
+      done(body.uploads?.[0]?.duplicate ? 'Already uploaded' : 'Sent', 'ok');
+      refreshUploads();
+    };
+    x.onerror = () => done('Network error, try again', 'bad');
+    x.send(fd);
+  }
+}
+
+async function refreshUploads(openSheet) {
+  const pid = PID;
+  clearTimeout(refreshUploads.t);
+  let ups;
+  try { ups = await api(`/api/projects/${encodeURIComponent(pid)}/uploads`); } catch (e) { if ($('#ups')) $('#ups').innerHTML = `<div class="small">${esc(e.message)}</div>`; return; }
+  if (PID !== pid || S.view !== 'upload' || !$('#ups')) return;
+  S.uploads = ups;
+  S.upSheets = Object.fromEntries(ups.flatMap(u => u.sheets.map(s => [s.id, { ...s, filename: u.filename }])));
+  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status)));
+  $('#upState').textContent = busy ? 'Working… this page updates by itself' : '';
+  $('#ups').innerHTML = ups.length ? ups.map(u => `<div class="upl stack">
+    <div class="row between"><span><b>${esc(u.filename)}</b> <span class="small muted">${mb(u.size_bytes)}${u.pages != null ? ` · ${u.pages} page${u.pages === 1 ? '' : 's'}` : ''}${u.pages != null && u.new_sheets < u.pages ? ` · ${u.pages - u.new_sheets} already in the project` : ''}</span></span>${chip(UP_STATUS[u.status])}</div>
+    ${u.error ? `<div class="note warn">${esc(u.error)}</div>` : ''}
+    ${u.sheets.length ? `<div class="thumbs">${u.sheets.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="thumb ${s.status === 'ready' ? '' : 'off'}" aria-label="Page ${s.page_no}">
+      ${s.thumb_url ? `<img src="${s.thumb_url}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
+      <span class="row between small"><span>Page ${s.page_no}</span>${s.status === 'ready' ? '' : chip(SHEET_STATUS[s.status])}</span></a>`).join('')}</div>` : ''}
+  </div>`).join('') : '<div class="muted small">Nothing uploaded yet.</div>';
+  if (openSheet) showSheet(openSheet);
+  if (busy) refreshUploads.t = setTimeout(() => refreshUploads(), 3000);
+}
+
+function showSheet(id) {
+  const s = S.upSheets?.[id], el = $('#sheetView'); if (!el) return;
+  S.viewers.forEach(v => v.destroy()); S.viewers = [];
+  if (!s || s.status !== 'ready') { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="hd"><h2>${esc(s.filename)} · page ${s.page_no}</h2><button class="btn sm" id="closeSheet">Close</button></div><div id="sheetVw" style="height:62vh"></div>`;
+  S.viewers.push(new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url }));
+  $('#closeSheet').addEventListener('click', () => { S.viewers.forEach(v => v.destroy()); S.viewers = []; el.hidden = true; history.replaceState(null, '', `${P}upload`); });
+  el.scrollIntoView({ block: 'nearest' });
 }
 
 boot().catch(e => { main.innerHTML = `<div class="pad">Could not load Takeoff. ${esc(e.message)}</div>`; console.error(e); });

@@ -1,6 +1,6 @@
-"""Database tables for M0 (see docs/plans/upload-pipeline-implementation.md §3 M0).
+"""Database tables (see docs/plans/upload-pipeline-implementation.md §3 M0–M1).
 
-Sheets, members, bars and the pipeline tables arrive in M1–M3. Until members/bars exist, a floor's
+Members, bars and the later pipeline tables arrive in M2–M3. Until members/bars exist, a floor's
 beams, chajja and slab openings live in `floors.structure_json`, in the same shape `app.engine.Calc`
 reads from `inputs.json`; M2/M3 replace that column with rows.
 """
@@ -17,6 +17,9 @@ Json = JSON().with_variant(JSONB(), 'postgresql')
 ROLES = ('owner', 'editor', 'viewer')
 SEVERITIES = ('high', 'medium', 'low')
 ISSUE_STATUSES = ('open', 'answered', 'resolved')
+UPLOAD_STATUSES = ('queued', 'processing', 'done', 'failed')
+SHEET_STATUSES = ('queued', 'rendering', 'ready', 'needs_attention')
+JOB_STATUSES = ('queued', 'running', 'done', 'failed')
 
 
 class Base(DeclarativeBase):
@@ -183,3 +186,66 @@ class AuthSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created()
     user: Mapped[User] = relationship()
+
+
+class Upload(Base):
+    """A PDF someone uploaded. Stored as-is at `storage_key`; the worker splits it into sheets."""
+    __tablename__ = 'uploads'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    sha256: Mapped[str] = mapped_column(String(64))                    # of the whole file; same file → same upload
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(16), default='queued')
+    error: Mapped[str | None] = mapped_column(Text)                    # shown to the user as is
+    pages: Mapped[int | None] = mapped_column(Integer)
+    new_sheets: Mapped[int | None] = mapped_column(Integer)            # pages not already in the project
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = created()
+    sheets: Mapped[list[Sheet]] = relationship(back_populates='upload', order_by='Sheet.page_no')
+    __table_args__ = (UniqueConstraint('project_id', 'sha256'), CheckConstraint(f"status IN {UPLOAD_STATUSES}", name='status_valid'))
+
+
+class Sheet(Base):
+    """One page of an upload. Images are stored under `p/{project_id}/s/{sheet_id}/`."""
+    __tablename__ = 'sheets'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    upload_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('uploads.id', ondelete='CASCADE'), index=True)
+    page_no: Mapped[int] = mapped_column(Integer)                       # 1-based, within the upload
+    page_hash: Mapped[str] = mapped_column(String(64))                  # same page in another upload → not redone
+    width_pt: Mapped[float] = mapped_column(Float)
+    height_pt: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16), default='queued')
+    error: Mapped[str | None] = mapped_column(Text)
+    display_key: Mapped[str | None] = mapped_column(String(300))       # PNG for the viewer
+    display_dpi: Mapped[int | None] = mapped_column(Integer)           # px = pt × dpi / 72
+    thumb_key: Mapped[str | None] = mapped_column(String(300))
+    ocr_key: Mapped[str | None] = mapped_column(String(300))           # 300 dpi grayscale (M1 classify, M3 OCR)
+    sheet_type: Mapped[str | None] = mapped_column(String(32))         # layout, schedule, slab… (classify, later)
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('floors.id', ondelete='SET NULL'))
+    drg_no: Mapped[str | None] = mapped_column(String(100))
+    title: Mapped[str | None] = mapped_column(Text)
+    revision: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = created()
+    upload: Mapped[Upload] = relationship(back_populates='sheets')
+    __table_args__ = (UniqueConstraint('project_id', 'page_hash'), CheckConstraint(f"status IN {SHEET_STATUSES}", name='status_valid'))
+
+
+class Job(Base):
+    """One pipeline stage run. `key` = stage:subject:input_hash, so the same work is never done twice."""
+    __tablename__ = 'jobs'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    stage: Mapped[str] = mapped_column(String(32))                      # ingest, render, …
+    key: Mapped[str] = mapped_column(String(200), unique=True)
+    upload_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('uploads.id', ondelete='CASCADE'), index=True)
+    sheet_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('sheets.id', ondelete='CASCADE'), index=True)
+    status: Mapped[str] = mapped_column(String(16), default='queued')
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (CheckConstraint(f"status IN {JOB_STATUSES}", name='status_valid'),)

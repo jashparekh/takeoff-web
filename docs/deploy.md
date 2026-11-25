@@ -7,6 +7,9 @@ The app is described by `.do/app.yaml`:
 - **Database:** a managed Postgres 16 cluster.
 - **Migration job:** `migrate`, a pre-deploy job that runs `alembic upgrade head` before each release.
 - **Web service:** `web`. Its health check (`/api/health`) also checks the database.
+- **Queue:** a managed Valkey (Redis-compatible) cluster.
+- **Files:** a private Spaces bucket.
+- **Worker:** `worker`, which reads and draws uploaded PDFs (2 GB instance).
 
 Every push to `main` deploys.
 
@@ -15,12 +18,19 @@ Every push to `main` deploys.
 1. **Create the database.** Databases → Create → PostgreSQL **16**, region **Bangalore (BLR1)**, the smallest
    size, name it **`takeoff-db`**. In the cluster's *Users & Databases* tab add a database **`takeoff`** and a
    user **`takeoff`**. The spec looks for these exact names.
+   Also create:
+   - **Queue:** Databases → Create → **Valkey**, region BLR1, the smallest size, named **`takeoff-queue`**.
+   - **Files:** Spaces Object Storage → Create bucket, region BLR1, named **`takeoff-files`**. Leave file listing
+     **restricted** (private). No CORS rule is needed, because the app shows images through short-lived links.
+   - **Access key:** Spaces Object Storage → Access keys → create a key with access to `takeoff-files` only.
+     Keep the secret for step 3.
 2. **Create the app.** Apps → Create App → choose GitHub `jashparekh/takeoff-web` (branch `main`), then on the
    review screen use *Edit spec* / upload `.do/app.yaml`. Check that:
-   - the database component points at `takeoff-db`;
-   - the app is added to the cluster's *Trusted sources* (the dashboard offers this; without it the migrate job
+   - the database components point at `takeoff-db` and `takeoff-queue`;
+   - the app is added to both clusters' *Trusted sources* (the dashboard offers this; without it the migrate job
      can't connect and the deploy fails).
-3. **Optional settings.** Set `SIGNUP_ALLOWLIST` under App → Settings → `web` → Environment variables, if people
+3. **Settings.** Under App → Settings, on **both** `web` and `worker`, add `S3_ACCESS_KEY` and `S3_SECRET_KEY`
+   (the Spaces key from step 1) as **encrypted** variables. Optionally, set `SIGNUP_ALLOWLIST` on `web`, if people
    without an account should be able to sign up (for example `@yourfirm.in`). People added with `tools.users`
    can always sign in.
 4. **Deploy.** The `migrate` job creates the tables, then `web` starts. The deploy only goes live once
