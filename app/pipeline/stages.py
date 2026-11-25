@@ -34,7 +34,7 @@ from . import ocr, pdf
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
-LAYOUT_VERSION = 3               # 2: cantilevers and slab outline; 3: clear spans
+LAYOUT_VERSION = 4               # 2: cantilevers and slab outline; 3: clear spans; 4: spans from drawn dimensions
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -276,7 +276,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='beam', name=b.name,
                               vertical=b.vertical, x1=b.p1[0], y1=b.p1[1], x2=b.p2[0], y2=b.p2[1], b_in=b.b_in,
                               label_b_in=b.label_b_in, label_d_in=b.label_d_in, label_box=list(b.label.box),
-                              clear_in=b.clear_in, clear_source='layout', confidence=b.confidence, note=b.note))
+                              clear_in=b.clear_in, clear_source=b.clear_source, confidence=b.confidence, note=b.note))
             for c in r.columns:
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='column',
                               x1=c.x0, y1=c.y0, x2=c.x1, y2=c.y1,
@@ -298,7 +298,8 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
             cants = sum(1 for b in r.beams if b.cantilever)
             s.layout_version = LAYOUT_VERSION
             s.layout_note = (f'{len(names)} beams placed from {len(names | {u.name for u in r.unplaced})} labels read; '
-                             f'{cants} cantilever parts; {len(r.columns)} columns'
+                             f'{cants} cantilever parts; {len(r.columns)} columns; '
+                             f'{sum(b.clear_source == "dimension" for b in r.beams)} spans from drawn dimensions'
                              + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
     except Skip:
         return

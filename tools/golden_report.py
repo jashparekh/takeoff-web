@@ -82,8 +82,24 @@ def report(pt_per_in: float) -> dict:
         unplaced_labels=sorted({u.name for u in lay.unplaced}),
         floor_plate_sqft=lay.outline.area_sqft if lay.outline else None,
         floor_plate_pilot_sqft=json.loads((DATA / 'model.json').read_text())['slab']['footprint_sqft'],
+        **span_report(lay, inputs),
         floor_plate_has_curved_corner=bool(lay.outline and any(p[0] < 100 and p[1] < 130 for p in lay.outline.points)))
     return out
+
+
+def span_report(lay, inputs) -> dict:
+    """Clear spans: drawn dimensions read, beams given one, agreement with the geometry and with the pilot workbook.
+    The workbook is 4–5" under the drawn dimension on many beams (no rule found); the drawn value is what counts."""
+    wb = {b['name']: b['clear_in'] for b in inputs['beams']}
+    dim = [b for b in lay.beams if b.clear_source == 'dimension']
+    plain = [b for b in lay.beams if not b.cantilever and b.name in wb]
+    return dict(
+        span_dims_read=len(lay.dims),
+        spans_from_dimension=len(dim),
+        spans_dimension_agrees_with_geometry=sum(1 for b in dim if b.geo_clear_in and abs(b.clear_in - b.geo_clear_in) <= 1),
+        spans_within_1in_of_workbook=sum(1 for b in plain if b.clear_in and abs(b.clear_in - wb[b.name]) <= 1),
+        spans_drawn_4_5in_over_workbook=sorted(b.name for b in dim if b.name in wb and 3.5 <= b.clear_in - wb[b.name] <= 5.5),
+        spans_compared=len(plain))
 
 
 SCHEDULES = sorted((DATA / 'source').glob('*BEAM SCHEDULE*.pdf'))

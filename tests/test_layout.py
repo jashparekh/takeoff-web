@@ -71,6 +71,9 @@ def test_golden_worklounge_layout():
     assert r['cantilever_beams_matching_schedule'] >= 12          # 14 of 21 when written
     assert r['floor_plate_has_curved_corner']                     # the pilot's own outline missed it
     assert 5200 <= r['floor_plate_sqft'] <= 5500                  # pilot 5,131 without the curved corner
+    assert r['span_dims_read'] >= 75                              # 85 when written
+    assert r['spans_from_dimension'] >= 40                        # 46 when written
+    assert r['spans_dimension_agrees_with_geometry'] >= 0.9 * r['spans_from_dimension']
 
 
 @needs_tesseract

@@ -57,8 +57,9 @@ def lettering_width(vec: g.Vectors, edge_width: float) -> float | None:
     return max(count, key=count.get) if count else None
 
 
-def render_only(path: str, page_no: int, width: float, dpi: int) -> Image.Image:
-    """Render the page with only the paths of one stroke width (everything else removed from the in-memory copy)."""
+def render_only(path: str, page_no: int, width: float, dpi: int, max_size: float | None = None) -> Image.Image:
+    """Render the page with only the paths of one stroke width (everything else removed from the in-memory copy).
+    `max_size` (pt) also drops paths bigger than a glyph, e.g. the dimension lines that text sits on."""
     with PDFIUM:
         pdf = open_pdf(path)
         try:
@@ -69,7 +70,12 @@ def render_only(path: str, page_no: int, width: float, dpi: int) -> Image.Image:
                     R.FPDFPageObj_GetMatrix(o.raw, m)
                     R.FPDFPageObj_GetStrokeWidth(o.raw, w)
                     if abs(w.value * math.sqrt(abs(m.a * m.d - m.b * m.c)) - width) < 0.005:
-                        continue
+                        if max_size is None:
+                            continue
+                        l, b, r, t = (ctypes.c_float() for _ in range(4))
+                        R.FPDFPageObj_GetBounds(o.raw, l, b, r, t)
+                        if max(r.value - l.value, t.value - b.value) <= max_size:
+                            continue
                 page.remove_obj(o)
             img = page.render(scale=dpi / 72, grayscale=True).to_pil().convert('L')
             page.close()
@@ -152,7 +158,9 @@ class Beam:
     label_b_in: int | None = None
     label_d_in: int | None = None
     cantilever: bool = False
-    clear_in: float | None = None          # face-to-face span from the geometry (see clear_span_in)
+    clear_in: float | None = None          # face-to-face span: the drawn dimension, else the geometry
+    clear_source: str = 'layout'           # 'dimension' (written on the layout) or 'layout' (measured)
+    geo_clear_in: float | None = None      # what the geometry measures (see clear_span_in)
 
 
 @dataclass
@@ -162,6 +170,7 @@ class Layout:
     unplaced: list[Label] = field(default_factory=list)
     strips: list[g.Strip] = field(default_factory=list)
     edge_width: float | None = None
+    dims: list = field(default_factory=list)          # dimension strings read (dimensions.Dim)
     outline: g.Outline | None = None
 
 
@@ -315,7 +324,11 @@ def add_cantilevers(lay: Layout, strips: list[g.Strip], cols: list[g.Rect], labe
     lay.beams += new
 
 
+SPAN_AGREE_IN = 3              # drawn dimension vs measured clear span
+
+
 def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
+    from .dimensions import assign, read_dims
     vec = g.read_vectors(path, page_no)
     edges = g.beam_edges(vec, pt_per_in)
     if edges is None:
@@ -325,7 +338,16 @@ def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
     lay = match(labels, edges.strips, cols, pt_per_in)
     add_cantilevers(lay, edges.strips, cols, labels, pt_per_in)
     for b in lay.beams:
-        b.clear_in = clear_span_in(b, edges.strips, cols, pt_per_in)
+        b.clear_in = b.geo_clear_in = clear_span_in(b, edges.strips, cols, pt_per_in)
+    lettering = lettering_width(vec, edges.width)
+    lay.dims = read_dims(path, page_no, vec, lettering, pt_per_in) if lettering else []
+    for i, d in assign(lay.dims, lay.beams, pt_per_in).items():
+        b = lay.beams[i]
+        b.clear_in, b.clear_source = d.value_in, 'dimension'
+        if b.geo_clear_in and abs(d.value_in - b.geo_clear_in) > SPAN_AGREE_IN:
+            b.confidence = min(b.confidence, 0.4)
+            b.note = ' '.join(filter(None, [b.note, f'Drawn span {d.text} but the beam measures '
+                                                    f'{b.geo_clear_in:.0f}" face to face.']))
     lay.edge_width = edges.width
     lay.outline = g.slab_outline(vec, edges.width, edges.strips, pt_per_in)
     return lay
