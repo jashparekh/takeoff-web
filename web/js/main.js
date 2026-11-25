@@ -1057,7 +1057,7 @@ async function rvShow() {
         <label class="stack grow">Depth D (in)<input class="f num" name="d" type="number" step="0.5" value="${m.label_d_in ?? ''}" ${dis}></label></div>
       <span class="muted">Size as written on the drawing label, e.g. B13(9"X18").</span>
       <label class="stack">Clear span, face to face<input class="f mono" name="clear" value="${m.clear_in ? ftIn(m.clear_in) : ''}" placeholder="e.g. 16'-2&quot;" ${dis}></label>
-      <span class="muted">${m.clear_source === 'person' ? 'Entered by a person.' : 'Measured from the drawing; type the drawn dimension if it differs.'}</span>
+      <span class="muted">${{person: 'Entered by a person.', dimension: 'Read from the dimension drawn on the layout.'}[m.clear_source] || 'Measured from the beam edges (no drawn dimension read); type the drawn dimension if it differs.'}</span>
     </form>` : ''}
     ${RV.canEdit ? `<div class="row rvbtns">
       <button class="btn pri" data-a="accept" ${m.placed ? '' : 'disabled'}>Looks right <kbd>A</kbd></button>

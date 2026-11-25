@@ -76,9 +76,15 @@ Product rules (non-negotiable):
 - Engine from the drawings (M3): `inputs_builder.beams_from_drawings` builds `beams[]` from layout members (clear span)
   + schedule specs (size, kind, stirrups, bars) when a floor has members; **every member and spec used must be checked
   in Review** (accepted / edited / added), else `NotReady` lists what is left (the API's `not_ready`). Chajja and slab
-  still come from `floors.structure_json` until slab sheets are read (M5). Clear span = centre-to-centre less half the
-  support where the span ends on a support's centre line (`layout.clear_span_in`): only ~20% within 1" of the pilot,
-  so Review takes a typed span (`clear_in`, ft-in). `services/checks.py`: size conflicts (B5), layout beams without a
+  still come from `floors.structure_json` until slab sheets are read (M5). Clear span = the **drawn dimension** when one is read
+  (`dimensions.py`: dimension text OCR'd from the lettering render with lines removed, paired with its dimension line,
+  kept only if the line length agrees allowing for the line stopping short of the faces — 4" each end on the pilot —
+  then given to the parallel beams on both sides of the panel; `clear_source='dimension'`), else centre-to-centre less
+  half the support where the span ends on a support's centre line (`layout.clear_span_in`, `'layout'`). A drawn span
+  that disagrees with the measured one by > 3" lowers confidence and is noted. Pilot: 85 dimensions, 49 beams spanned
+  from them, 47 agree with the geometry within 1". Drawn dimensions count (Jash, Nov 2026); the pilot workbook is
+  4–5" under the drawn span on 16 beams (B6, B12, B14…; no rule found) and counts some beams through a support the
+  layout splits (B13, B24…), so only ~20% of spans are within 1" of it. Review takes a typed span (`clear_in`, ft-in). `services/checks.py`: size conflicts (B5), layout beams without a
   schedule reading and vice versa, layout cantilevers the schedule doesn't have → Issues (rule `check_*`), re-run
   after stages and Review edits. Review also lists schedule readings with a bar editor (`PATCH …/specs/{id}`,
   `POST …/sheets/{id}/specs`). `tests/test_acceptance.py`: upload → review via the API → inputs equal `inputs.json`
