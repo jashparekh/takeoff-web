@@ -310,3 +310,4 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
 .btn.pri kbd{color:inherit;border-color:rgba(255,255,255,.5)}
 .rvbtns .btn[disabled]{opacity:.5;cursor:not-allowed}
 .viewer .overlay polygon.plate{fill:rgba(37,99,235,.08);stroke:#2563EB;stroke-width:1.5;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
+table.bars td{padding:3px 4px}

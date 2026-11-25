@@ -130,11 +130,10 @@ def create_project(req: ProjectIn, user: CurrentUser, db: Db):
 @router.get('/api/projects/{pid}')
 def get_project(p: Viewer, user: CurrentUser, db: Db):
     try:
-        beams = build_inputs(p)['beams']
-        ready = True
-    except NotReady:
-        beams, ready = [], False
-    return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, buildings=buildings(p),
+        beams, ready, not_ready = build_inputs(p)['beams'], True, None
+    except NotReady as e:
+        beams, ready, not_ready = [], False, str(e)
+    return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, not_ready=not_ready, buildings=buildings(p),
                 assumptions=assumptions_list(p), issues=[issue_dict(i) for i in p.issues],
                 model=build_model(db, p) or model_file(p.slug), beams_input=beams)
 
