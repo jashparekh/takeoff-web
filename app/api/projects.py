@@ -19,6 +19,7 @@ from ..auth.deps import CurrentUser, Db, project_role, role_on
 from ..db.models import Building, Floor, Issue, Project, ProjectMember, Run, SiteTakeoff
 from ..services.inputs_builder import NotReady, assumptions_list, build_inputs, measured_floors
 from ..engine import Calc
+from ..services.model_builder import build_model
 from .compare import auto_issues, notebook_compare
 
 DATA = Path(__file__).parents[1] / 'data'
@@ -135,7 +136,7 @@ def get_project(p: Viewer, user: CurrentUser, db: Db):
         beams, ready = [], False
     return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, buildings=buildings(p),
                 assumptions=assumptions_list(p), issues=[issue_dict(i) for i in p.issues],
-                model=model_file(p.slug), beams_input=beams)
+                model=build_model(db, p) or model_file(p.slug), beams_input=beams)
 
 
 class CalcRequest(BaseModel):

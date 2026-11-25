@@ -26,6 +26,7 @@ from .pdf import PDFIUM, open_pdf
 
 LABEL = re.compile(r'((?:H?B|CB)\d{1,3}[A-Z]?)(?:\(\s*(\d{1,2})\D{0,3}?[X×]\s*(\d{1,2}))?')
 LABEL_DPIS = (200, 250, 300)
+BEAM_GAP_IN = 16          # a crossing beam interrupts a beam's edge lines by about its own width
 NEAR_PT_IN = 27          # a label sits within ~27 inches (16 pt at 1:120) of its beam's centreline
 
 
@@ -150,6 +151,7 @@ class Beam:
     note: str | None = None
     label_b_in: int | None = None
     label_d_in: int | None = None
+    cantilever: bool = False
 
 
 @dataclass
@@ -159,6 +161,7 @@ class Layout:
     unplaced: list[Label] = field(default_factory=list)
     strips: list[g.Strip] = field(default_factory=list)
     edge_width: float | None = None
+    outline: g.Outline | None = None
 
 
 def cuts(s: g.Strip, strips: list[g.Strip], cols: list[g.Rect]) -> tuple[list[float], list[float]]:
@@ -239,6 +242,78 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
     return out
 
 
+def columns_on(s: g.Strip, lo: float, hi: float, cols: list[g.Rect]) -> list[tuple[float, float]]:
+    """Columns sitting on strip `s`'s line between `lo` and `hi`, as (start, end) along the line."""
+    out = []
+    for r in cols:
+        across = r.cx if s.vertical else r.cy
+        a, b = (r.y0, r.y1) if s.vertical else (r.x0, r.x1)
+        if abs(across - s.c) < 6 and b > lo and a < hi:
+            out.append((a, b))
+    return out
+
+
+def add_cantilevers(lay: Layout, strips: list[g.Strip], cols: list[g.Rect], labels: list[Label], pt_per_in: float):
+    """A beam's cantilever: follow its line outward (across beams that cross it) from the end of its span. If the line
+    runs out before reaching a column or another label, that stretch overhangs: it is the cantilever. A column at
+    the root is the support; a column further out means an unlabelled span instead. Tips often carry an edge beam,
+    so a free tip is not required. Named like the schedules: B7-cant, or B74-cantL / B74-cantR (left or top / right
+    or bottom) when both ends overhang."""
+    gap = BEAM_GAP_IN * pt_per_in + 6
+    near = NEAR_PT_IN * pt_per_in
+    by_line: dict[tuple, list[g.Strip]] = defaultdict(list)
+    for s in strips:
+        by_line[(s.vertical, round(s.c))].append(s)
+    runs = []                                      # (vertical, c, lo, hi, a strip on it)
+    for (vertical, c), ss in by_line.items():
+        same = sorted([t for (v, k), lst in by_line.items() if v == vertical and abs(k - c) <= 1 for t in lst],
+                      key=lambda t: t.a)
+        cur = None
+        for t in same:
+            if cur and t.a - cur[3] <= gap:
+                cur[3] = max(cur[3], t.b)
+            else:
+                cur = [vertical, t.c, t.a, t.b, t]
+                runs.append(cur)
+    seen = set()
+    label_at = [(lb.vertical, lb.y if lb.vertical else lb.x, lb.x if lb.vertical else lb.y) for lb in labels]
+    new = []
+    for vertical, c, lo_run, hi_run, s0 in runs:
+        key = (vertical, round(c, 0), round(lo_run), round(hi_run))
+        if key in seen:
+            continue
+        seen.add(key)
+        on = []
+        for b in lay.beams:
+            if b.vertical != vertical or b.cantilever or abs((b.p1[0] if vertical else b.p1[1]) - c) > 1.5:
+                continue
+            lo, hi = sorted((b.p1[1], b.p2[1]) if vertical else (b.p1[0], b.p2[0]))
+            if lo >= lo_run - 2 and hi <= hi_run + 2:
+                on.append((lo, hi, b))
+        if not on:
+            continue
+        on.sort(key=lambda t: t[0])
+        found = []
+        for side, (lo, hi, beam) in (('L', on[0]), ('R', on[-1])):
+            root, tip = (lo, lo_run) if side == 'L' else (hi, hi_run)
+            x1, x2 = sorted((root, tip))
+            if x2 - x1 < 12 * pt_per_in:
+                continue                           # under a foot: an edge detail
+            out_cols = [(a, b) for a, b in columns_on(s0, x1, x2, cols) if not (a - 3 <= root <= b + 3)]
+            if out_cols:
+                continue                           # something holds it up further out: not an overhang
+            if any(v == vertical and x1 + 2 < al < x2 - 2 and abs(ac - c) <= near for v, al, ac in label_at):
+                continue                           # another beam's label is there
+            found.append((side, x1, x2, beam))
+        for side, x1, x2, beam in found:
+            name = f'{beam.name}-cant' + (side if len(found) == 2 else '')
+            p1, p2 = ((c, x1), (c, x2)) if vertical else ((x1, c), (x2, c))
+            new.append(Beam(name, vertical, p1, p2, beam.b_in, beam.label, min(0.5, round(beam.confidence * 0.8, 2)),
+                            'Runs past the last support with no column under it: read as a cantilever.',
+                            beam.label_b_in, beam.label_d_in, True))
+    lay.beams += new
+
+
 def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
     vec = g.read_vectors(path, page_no)
     edges = g.beam_edges(vec, pt_per_in)
@@ -247,7 +322,9 @@ def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
     cols = g.columns(vec, pt_per_in, edges.width)
     labels = read_labels(path, page_no, vec, edges.width)
     lay = match(labels, edges.strips, cols, pt_per_in)
+    add_cantilevers(lay, edges.strips, cols, labels, pt_per_in)
     lay.edge_width = edges.width
+    lay.outline = g.slab_outline(vec, edges.width, edges.strips, pt_per_in)
     return lay
 
 

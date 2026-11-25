@@ -51,7 +51,7 @@ function shell(mode) {
   document.body.dataset.mode = mode;         // 'bare' (sign-in), 'home' (projects), 'project'
   $('#nav').querySelectorAll('a').forEach(a => {
     a.href = P + a.dataset.v;
-    a.hidden = mode !== 'project' || (NEEDS_CALC.has(a.dataset.v) && !S.project?.ready);
+    a.hidden = mode !== 'project' || (NEEDS_CALC.has(a.dataset.v) && !S.project?.ready && !(a.dataset.v === 'model' && S.project?.model));
   });
   const m = S.project?.meta;
   $('#projName').hidden = mode !== 'project';
@@ -83,7 +83,7 @@ async function route() {
     }
     if (mine !== routing) return;
   }
-  if (!PROJECT_VIEWS.includes(v) || (NEEDS_CALC.has(v) && !S.project.ready)) return go(P + 'overview', true);
+  if (!PROJECT_VIEWS.includes(v) || (NEEDS_CALC.has(v) && !S.project.ready && !(v === 'model' && S.project.model))) return go(P + 'overview', true);
   S.view = v;
   shell('project');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
@@ -212,7 +212,7 @@ function newProject() {
 function setup() {
   const p = S.project, m = p.meta;
   main.innerHTML = header(esc(m.name), esc([m.client, m.city, m.status].filter(Boolean).join(' · ')),
-    `<a class="btn pri" href="${P}upload">Add drawings</a>`) + `
+    `${p.model ? `<a class="btn" href="${P}model">3D model</a><a class="btn" href="${P}review">Review</a>` : ''}<a class="btn pri" href="${P}upload">Add drawings</a>`) + `
   <div class="grid g-main">
     <section class="panel"><div class="hd"><h2>Buildings and floors</h2></div><div class="tw"><table>
       <thead><tr><th>Building</th><th>Floor</th><th class="r">Level</th><th class="r">Typical × n</th><th>Drawings</th></tr></thead><tbody>
@@ -365,12 +365,16 @@ const M3LEG = {
 async function model(target) {
   const md = S.project.model;
   if (!md) { main.innerHTML = header('3D model', 'No framing model for this project yet.'); return; }
-  const mode = store.get('m3mode', 'type');
+  const noCalc = !S.calc;                       // read from uploads, not calculated yet: element colours only
+  const modes = noCalc ? { type: M3MODES.type } : M3MODES;
+  const mode = noCalc ? 'type' : store.get('m3mode', 'type');
+  const measured = md.floors?.find(f => f.measured)?.name;
+  const nBeams = new Set(md.beams.map(b => b.name.split('-')[0])).size;
   const ghosts = store.get('m3ghost', true), showSlab = store.get('m3slab', true);
-  main.innerHTML = header('3D model', `Second floor slab and beams in 3D, from ${esc(md.source)}. Drag to turn, scroll or pinch to zoom, right-drag or two fingers to move. Double-click to zoom to a member.`,
+  main.innerHTML = header('3D model', `${esc(measured || 'Second floor')} slab and beams in 3D, from ${esc(md.source)}. Drag to turn, scroll or pinch to zoom, right-drag or two fingers to move. Double-click to zoom to a member.`,
     `<input class="f" id="m3q" placeholder="Go to beam, e.g. B47" aria-label="Go to beam" style="width:170px">`) + `
   <div class="row">
-    <div class="seg" id="m3modes">${Object.entries(M3MODES).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="seg" id="m3modes">${Object.entries(modes).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div class="seg"><button data-v="home">3D</button><button data-v="top">Top</button><button data-v="below">From below</button></div>
     <label class="row small" style="gap:6px"><input type="checkbox" id="m3slab" ${showSlab ? 'checked' : ''}>Slab</label>
     <label class="row small" style="gap:6px"><input type="checkbox" id="m3ghost" ${ghosts ? 'checked' : ''}>Other floors</label>
@@ -383,20 +387,26 @@ async function model(target) {
     </div>
     <aside class="panel m3side" id="m3pick"><div class="pad stack small">
       <p class="muted">Click a beam, the slab or a column to see how its quantities were worked out.</p>
-      <div class="row"><span class="sp">Beams placed in 3D</span><b class="mono">${new Set(md.beams.map(b => b.name.split('-')[0])).size} of ${S.members.length}</b></div>
-      ${md.unplaced.length ? `<p class="muted">Not placed (label not matched on the layout): ${md.unplaced.map(n => `<a href="${P}beam/${n.split('-')[0]}">${n}</a>`).join(', ')}. Their steel is still counted.</p>` : ''}
-      <p class="muted">Floor-to-floor height is taken as 3.0 m for the picture. Only the second floor is measured; the other floors repeat its outline faintly for context.</p>
+      ${noCalc ? `<div class="row"><span class="sp">Beams read from the layout</span><b class="mono">${nBeams}</b></div>
+      <div class="row"><span class="sp">Columns</span><b class="mono">${md.columns.length}</b></div>
+      ${md.slab.footprint_sqft ? `<div class="row"><span class="sp">Floor plate</span><b class="mono">${fx(md.slab.footprint_sqft)} sq ft</b></div>` : ''}
+      ${md.unplaced.length ? `<p class="muted">Labels read with no beam found: ${md.unplaced.map(esc).join(', ')}. Fix them in <a href="${P}review">Review</a>.</p>` : ''}
+      <p class="muted">Sizes are from the drawing labels. Nothing is calculated yet; the slab is shown ${5}″ thick for the picture only.</p>`
+      : `<div class="row"><span class="sp">Beams placed in 3D</span><b class="mono">${nBeams} of ${S.members.length}</b></div>
+      ${md.unplaced.length ? `<p class="muted">Not placed (label not matched on the layout): ${md.unplaced.map(n => `<a href="${P}beam/${n.split('-')[0]}">${n}</a>`).join(', ')}. Their steel is still counted.</p>` : ''}`}
+      <p class="muted">${md.floors ? `Floor-to-floor height ${fx(md.floor_h, 2)} m from the project's floor levels.` : 'Floor-to-floor height is taken as 3.0 m for the picture.'} Only ${esc(measured || 'the second floor')} is measured; the other floors repeat its outline faintly for context.</p>
     </div></aside>
   </div>`;
   const { Model3D } = await import('./model3d.js');
   if (S.view !== 'model') return;
   const m3 = S.m3d = new Model3D($('#m3'), {
     model: md, calc: S.calc, onPick: sel => m3panel(sel),
+    ...(md.floors ? { floorH: md.floor_h, level: md.level + 1, levels: Math.max(md.floors.length, md.level + 1) } : {}),
     onHover: (h, e) => {
       const tip = $('#m3tip'); if (!tip) return;
       if (!h || h.kind === 'ghost') { tip.hidden = true; return; }
       const r = $('#m3').getBoundingClientRect();
-      tip.textContent = h.kind === 'beam' ? `${h.part} · ${fx(S.byName[h.id]?.kg, 1)} kg` : h.kind === 'slab' ? `Slab · ${fx(S.calc.slab.kg)} kg steel` : `Column ${h.id}`;
+      tip.textContent = h.kind === 'beam' ? (noCalc ? h.part : `${h.part} · ${fx(S.byName[h.id]?.kg, 1)} kg`) : h.kind === 'slab' ? (noCalc ? 'Slab' : `Slab · ${fx(S.calc.slab.kg)} kg steel`) : `Column ${h.id}`;
       tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 10) + 'px'; tip.hidden = false;
     },
   });
@@ -407,13 +417,14 @@ async function model(target) {
   main.querySelectorAll('.viewer-tools button').forEach(b => b.addEventListener('click', () => b.dataset.z === 'fit' ? m3.home() : m3.zoom(b.dataset.z === 'in' ? 0.7 : 1.4)));
   $('#m3slab').addEventListener('change', e => { store.set('m3slab', e.target.checked); m3.show('slab', e.target.checked); });
   $('#m3ghost').addEventListener('change', e => { store.set('m3ghost', e.target.checked); m3.show('ghost', e.target.checked); });
-  const go = n => { n = n.trim().toUpperCase(); if (!m3.beamMeshes[n]) { toast(S.byName[n] ? `${n} is not placed in 3D yet` : `No beam ${n}`); return; } const sel = { kind: 'beam', id: n }; m3.select(sel); m3.focus(sel); m3panel(sel); };
+  const go = n => { n = n.trim().toUpperCase(); if (!m3.beamMeshes[n]) { toast(S.byName?.[n] || md.unplaced.includes(n) ? `${n} is not placed in 3D yet` : `No beam ${n}`); return; } const sel = { kind: 'beam', id: n }; m3.select(sel); m3.focus(sel); m3panel(sel); };
   $('#m3q').addEventListener('keydown', e => { if (e.key === 'Enter') go(e.target.value); });
   if (target) go(target);
 }
 function m3panel(sel) {
   const el = $('#m3pick'); if (!el) return;
   if (!sel) return;
+  if (!S.calc) return m3panelRead(sel, el);
   if (sel.kind === 'beam') {
     const m = S.byName[sel.id]; const r = S.site[sel.id], iss = S.issueBeams[sel.id] || [];
     history.replaceState(null, '', `${P}model/${sel.id}`);
@@ -444,6 +455,33 @@ function m3panel(sel) {
       <p class="muted">Add the column schedule to take off column steel and concrete.</p></div>`;
   } else if (sel.kind === 'ghost') {
     el.innerHTML = `<div class="hd"><h2>Floor ${sel.level ?? ''}</h2></div><div class="pad small stack"><p>Not measured. Only the second floor structural drawings have been received; this outline repeats the second floor for context.</p><a href="${P}upload">Add drawings for other floors</a></div>`;
+  }
+}
+
+/* 3D side panel for a project read from uploads (no calculation yet): what was read, and where to fix it. */
+function m3panelRead(sel, el) {
+  const md = S.project.model;
+  if (sel.kind === 'beam') {
+    const parts = md.beams.filter(b => b.name.split('-')[0] === sel.id);
+    history.replaceState(null, '', `${P}model/${sel.id}`);
+    const len = b => Math.hypot(b.p2[0] - b.p1[0], b.p2[1] - b.p1[1]) / 0.0254;
+    el.innerHTML = `<div class="hd"><h2>Beam ${esc(sel.id)}</h2></div><div class="pad stack small">
+      ${parts.map(b => `<div class="m3part"><div class="row"><b>${esc(b.name)}</b><span class="muted">${b.cant ? 'cantilever' : 'span'}</span><span class="sp"></span>
+        <span class="mono">${fx(b.b_in, 0)}″ × ${b.depth_known ? `${fx(b.D_in, 0)}″` : '? (depth not on label)'}</span></div>
+        <div class="row"><span class="sp muted">Length centre to centre</span><span class="mono">${ftIn(len(b))}</span></div>
+        <div class="row"><span class="sp muted">Checked</span><span>${{ auto: 'Not yet', accepted: 'Accepted', edited: 'Corrected', added: 'Added by hand' }[b.status] || b.status}</span></div>
+        <a href="${P}review/${b.member_id}">Open in Review</a></div>`).join('')}
+      <p class="muted">Quantities come once the schedules are read and the values the drawings don't give are entered.</p></div>`;
+  } else if (sel.kind === 'slab') {
+    el.innerHTML = `<div class="hd"><h2>Floor plate</h2></div><div class="pad stack small">
+      <div class="row"><span class="sp muted">Area inside the outline, beams included</span><span class="mono">${fx(md.slab.footprint_sqft)} sq ft</span></div>
+      <p class="muted">Traced from the beam edges on ${esc(md.source)}, including curved edges. Openings and the slab thickness come from the slab layouts.</p></div>`;
+  } else if (sel.kind === 'column') {
+    el.innerHTML = `<div class="hd"><h2>Column ${esc(sel.id)}</h2></div><div class="pad stack small"><div class="row"><span class="sp muted">Columns on the layout</span><span class="mono">${md.columns.length}</span></div>
+      <p class="muted">Add the column schedule to take off column steel and concrete.</p></div>`;
+  } else if (sel.kind === 'ghost') {
+    const f = md.floors?.[(sel.level ?? 1) - 1];
+    el.innerHTML = `<div class="hd"><h2>${esc(f?.name || `Floor ${sel.level ?? ''}`)}</h2></div><div class="pad small stack"><p>Not measured yet; this outline repeats the measured floor for context.</p><a href="${P}upload">Add drawings for this floor</a></div>`;
   }
 }
 
@@ -772,7 +810,9 @@ async function showMembers(vw, s) {
   if (!S.viewers.includes(vw)) return;
   const beams = ms.filter(m => m.kind === 'beam' && m.placed), cols = ms.filter(m => m.kind === 'column');
   const lost = ms.filter(m => m.kind === 'beam' && !m.placed);
-  vw.setOverlay(beams.map(m => `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="${confColor(m.confidence)}"/>`).join('') +
+  const plates = ms.filter(m => m.kind === 'slab_panel' && m.points);
+  vw.setOverlay(plates.map(m => `<polygon points="${m.points.map(p => p.join(',')).join(' ')}" class="plate"/>`).join('') +
+    beams.map(m => `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="${confColor(m.confidence)}"/>`).join('') +
     cols.map(m => `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}"/>`).join(''));
   const byId = Object.fromEntries(ms.map(m => [m.id, m]));
   vw.setHotspots([...beams, ...lost].filter(m => m.label_box).map(m => ({
@@ -785,7 +825,7 @@ async function showMembers(vw, s) {
       · <span style="color:${confColor(m.confidence)}">confidence ${fx(m.confidence * 100)}%</span>${m.note ? ` · ${esc(m.note)}` : ''}`;
   };
   const info = document.createElement('div'); info.className = 'pad small'; info.id = 'memberInfo';
-  info.innerHTML = `${esc(s.layout_note || '')} <span class="legend-inline"><span class="sw" style="background:#15803D"></span>likely <span class="sw" style="background:#EA580C"></span>check <span class="sw" style="background:#B42318"></span>doubtful or no beam found <span class="sw" style="background:#2563EB"></span>column</span> · Click a label for details. Reviewing them comes next.`;
+  info.innerHTML = `${esc(s.layout_note || '')} <span class="legend-inline"><span class="sw" style="background:#15803D"></span>likely <span class="sw" style="background:#EA580C"></span>check <span class="sw" style="background:#B42318"></span>doubtful or no beam found <span class="sw" style="background:#2563EB"></span>column</span> · Click a label for details; check them in <a href="${P}review">Review</a>.`;
   $('#sheetVw').before(info);
 }
 

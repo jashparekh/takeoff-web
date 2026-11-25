@@ -49,8 +49,15 @@ Product rules (non-negotiable):
   holding only the lettering strokes, at 200/250/300 dpi, upright and turned (89 of 91 pilot labels). A label goes to
   the nearest parallel strip and the span between columns or beams that cross right over it; a beam framing in from
   one side (T) only splits a span when two labels share it. Results in `members` (sheet points); people's decisions
-  (status ≠ auto) survive re-reads. `python -m tools.golden_report` compares with the pilot (79 of 88 beams within
-  4 ft, median 0.1"; 25/25 columns); the misses mostly need schedule spans (M3).
+  (status ≠ auto) survive re-reads. Cantilevers: a beam's line followed outward past its root column to where it runs
+  out with no further column → `B7-cant` / `-cantL` / `-cantR` (14 of the schedule's 21 cantilever beams, 7 extra;
+  confidence ≤ 0.5 so Review shows them early). Floor plate: every beam-edge segment at any angle within 6 ft of the
+  frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
+  corner the pilot missed). `python -m tools.golden_report` compares with the pilot (79 of 88 beams within 4 ft,
+  median 0.1"; 25/25 columns); the misses mostly need schedule spans (M3).
+- `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
+  `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
+  view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
   Bump `CLASSIFY_VERSION` / `CALIBRATE_VERSION` / `LAYOUT_VERSION` when a reader changes. Tesseract is needed locally (`brew install
   tesseract`) and is in the Docker image; OCR tests skip without it. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —

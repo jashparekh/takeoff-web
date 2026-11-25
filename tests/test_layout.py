@@ -68,6 +68,9 @@ def test_golden_worklounge_layout():
     assert r['beams_within_4ft'] >= 75                 # 79 of 88 when written; the rest need the schedule (M3)
     assert r['columns_matching_pilot'] == 25
     assert r['median_mid_error_in'] <= 3
+    assert r['cantilever_beams_matching_schedule'] >= 12          # 14 of 21 when written
+    assert r['floor_plate_has_curved_corner']                     # the pilot's own outline missed it
+    assert 5200 <= r['floor_plate_sqft'] <= 5500                  # pilot 5,131 without the curved corner
 
 
 @needs_tesseract

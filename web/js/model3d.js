@@ -4,6 +4,8 @@ import { OrbitControls } from '../vendor/OrbitControls.js';
 
 const IN = 0.0254;
 
+const DISPLAY_SLAB_IN = 5;            // slab thickness for the picture only, before assumptions exist
+
 export class Model3D {
   constructor(el, { model, calc, floorH = 3.0, level = 2, levels = 4, onPick, onHover }) {
     this.el = el; this.model = model; this.calc = calc; this.onPick = onPick; this.onHover = onHover;
@@ -32,20 +34,25 @@ export class Model3D {
   }
 
   build() {
-    const m = this.model, a = this.calc.assumptions, Y0 = this.Y0;
-    const t = a.slab_t_in * IN;
-    const byName = Object.fromEntries(this.calc.beams.map(b => [b.name, b]));
+    const m = this.model, a = this.calc?.assumptions, Y0 = this.Y0;
+    // Before a calculation exists (a project read from uploads), sizes come from the drawing labels and the slab is
+    // shown at a display thickness; the side panel says so.
+    const t = (a ? a.slab_t_in : DISPLAY_SLAB_IN) * IN;
+    const byName = this.calc ? Object.fromEntries(this.calc.beams.map(b => [b.name, b]))
+      : Object.fromEntries(m.beams.map(b => [b.name, { b_in: b.b_in || 9, D_in: b.D_in, base: b.name.split('-')[0] }]));
     const [W, Dd] = m.size; this.center = new THREE.Vector3(W / 2, Y0, Dd / 2); this.extent = Math.max(W, Dd);
 
     // measured slab
-    const shape = new THREE.Shape(m.slab.outline.map(([x, y]) => new THREE.Vector2(x, -y)));
+    const pts = m.slab.outline.length >= 3 ? m.slab.outline : [[0, 0], [W, 0], [W, Dd], [0, Dd]];
+    const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, -y)));
     const slabGeo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
     slabGeo.rotateX(-Math.PI / 2); slabGeo.translate(0, Y0 - t, 0);
     this.slabMat = new THREE.MeshStandardMaterial({ color: this.tok('--slab'), transparent: true, opacity: 0.55, roughness: 0.9, depthWrite: false });
     const slab = new THREE.Mesh(slabGeo, this.slabMat);
     slab.userData = { kind: 'slab', id: 'slab' }; slab.renderOrder = 2;
     slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(slabGeo, 25), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 })));
-    this.add('slab', slab); this.pickables.push(slab); this.slab = slab;
+    if (m.slab.outline.length >= 3) { this.add('slab', slab); this.pickables.push(slab); }
+    this.slab = slab;
 
     // beams
     this.beamMeshes = {};

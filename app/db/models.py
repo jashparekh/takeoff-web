@@ -307,6 +307,8 @@ class Member(Base):
     label_b_in: Mapped[float | None] = mapped_column(Float)            # size printed with the label, e.g. (9"X18")
     label_d_in: Mapped[float | None] = mapped_column(Float)
     label_box: Mapped[list | None] = mapped_column(Json)               # [x0, y0, x1, y1] pt: the hotspot
+    points: Mapped[list | None] = mapped_column(Json)                  # slab_panel: outline [[x, y], …] pt
+    area_sqft: Mapped[float | None] = mapped_column(Float)             # slab_panel: area inside the outline
     confidence: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(16), default='auto')
     note: Mapped[str | None] = mapped_column(Text)
