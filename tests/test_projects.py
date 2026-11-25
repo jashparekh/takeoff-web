@@ -70,9 +70,11 @@ def test_create_project(client, session):
     assert client.post('/api/projects', json=NEW).json() == dict(id='shanti-nagar-villas-2')
     p = client.get('/api/projects/shanti-nagar-villas').json()
     assert p['role'] == 'owner' and not p['ready'] and p['meta']['name'] == 'Shanti Nagar Villas'
-    assert p['buildings'] == [dict(name='Villa type A', copies=6, floors=[
-        dict(name='Ground', level_m=0, typical_count=1, measured=False),
-        dict(name='First', level_m=3.15, typical_count=1, measured=False)])]
+    strip = lambda d: {k: v for k, v in d.items() if k != 'id'}                     # noqa: E731
+    assert [dict(strip(b), floors=[strip(f) for f in b['floors']]) for b in p['buildings']] == [
+        dict(name='Villa type A', copies=6, floors=[
+            dict(name='Ground', level_m=0, typical_count=1, measured=False),
+            dict(name='First', level_m=3.15, typical_count=1, measured=False)])]
     assert p['model'] is None and p['beams_input'] == []
     c = client.post('/api/projects/shanti-nagar-villas/calculate', json={})
     assert c.status_code == 409 and 'No measured floor' in c.json()['detail']

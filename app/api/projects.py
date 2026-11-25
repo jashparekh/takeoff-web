@@ -48,9 +48,9 @@ def issue_dict(i: Issue) -> dict:
 
 
 def buildings(p: Project) -> list[dict]:
-    return [dict(name=b.name, copies=b.copies,
-                 floors=[dict(name=f.name, level_m=f.level_m, typical_count=f.typical_count, measured=f.measured)
-                         for f in b.floors]) for b in p.buildings]
+    return [dict(id=str(b.id), name=b.name, copies=b.copies,
+                 floors=[dict(id=str(f.id), name=f.name, level_m=f.level_m, typical_count=f.typical_count,
+                              measured=f.measured) for f in b.floors]) for b in p.buildings]
 
 
 @router.get('/api/projects')

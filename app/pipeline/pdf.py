@@ -120,3 +120,46 @@ def _render_page(path: str, page_no: int) -> Rendered:
         return Rendered(display, ddpi, thumb_png, ocr, odpi)
     finally:
         pdf.close()
+
+
+@dataclass
+class TextLine:
+    text: str
+    x0: float             # fractions of the page as displayed, origin top-left
+    y0: float
+    x1: float
+    y1: float
+
+
+def text_lines(path: str, page_no: int) -> list[TextLine]:
+    """The page's text layer, one entry per text run. CAD exports often keep the title block as text while the
+    drawing itself is outlines; scanned sheets have no text at all (those need OCR, a later stage)."""
+    with PDFIUM:
+        pdf = open_pdf(path)
+        try:
+            page = pdf[page_no - 1]
+            w, h = page.get_size()
+            tp = page.get_textpage()
+            out = []
+            for i in range(tp.count_rects()):
+                l, b, r, t = tp.get_rect(i)
+                s = ' '.join(tp.get_text_bounded(l, b, r, t).split())
+                if s:
+                    out.append(TextLine(s, l / w, 1 - t / h, r / w, 1 - b / h))
+            tp.close()
+            rot = page.get_rotation()
+            page.close()
+        finally:
+            pdf.close()
+    return [rotate(x, rot) for x in out]
+
+
+def rotate(t: TextLine, rot: int) -> TextLine:
+    """Positions above are in the unrotated page; map them to the page as it is shown."""
+    if rot == 90:
+        return TextLine(t.text, 1 - t.y1, t.x0, 1 - t.y0, t.x1)
+    if rot == 180:
+        return TextLine(t.text, 1 - t.x1, 1 - t.y1, 1 - t.x0, 1 - t.y0)
+    if rot == 270:
+        return TextLine(t.text, t.y0, 1 - t.x1, t.y1, 1 - t.x0)
+    return t
