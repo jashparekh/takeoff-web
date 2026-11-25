@@ -13,6 +13,12 @@ databases:
     cluster_name: takeoff-db
     db_name: takeoff
     db_user: takeoff
+  # Managed Valkey (Redis-compatible) for the job queue, created first: Databases → Valkey, smallest, BLR1,
+  # named takeoff-queue. ${queue.DATABASE_URL} is a rediss:// (TLS) URL.
+  - name: queue
+    engine: VALKEY
+    production: true
+    cluster_name: takeoff-queue
 
 jobs:
   # Runs before every deploy; if a migration fails, the new version is not rolled out.
@@ -48,6 +54,20 @@ services:
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${db.DATABASE_URL}
+      # Files: a private Spaces bucket in BLR1 named takeoff-files. Add S3_ACCESS_KEY and S3_SECRET_KEY (a Spaces
+      # access key limited to that bucket) as encrypted variables in the dashboard, never in this file.
+      - key: S3_ENDPOINT_URL
+        scope: RUN_TIME
+        value: https://blr1.digitaloceanspaces.com
+      - key: S3_REGION
+        scope: RUN_TIME
+        value: blr1
+      - key: S3_BUCKET
+        scope: RUN_TIME
+        value: takeoff-files
+      - key: REDIS_URL
+        scope: RUN_TIME
+        value: ${queue.DATABASE_URL}
       - key: APP_URL                 # used in sign-in links; ${APP_URL} is the app's live URL
         scope: RUN_TIME
         value: ${APP_URL}
@@ -61,3 +81,33 @@ services:
       - key: MAIL_BACKEND
         scope: RUN_TIME
         value: console
+
+workers:
+  # Reads and draws uploaded PDFs (arq). 2 GB: an A0 sheet drawn at 300 dpi needs a few hundred MB.
+  - name: worker
+    dockerfile_path: Dockerfile
+    github:
+      repo: jashparekh/takeoff-web
+      branch: main
+      deploy_on_push: true
+    run_command: arq app.pipeline.jobs.WorkerSettings
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-2gb
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      # Files: a private Spaces bucket in BLR1 named takeoff-files. Add S3_ACCESS_KEY and S3_SECRET_KEY (a Spaces
+      # access key limited to that bucket) as encrypted variables in the dashboard, never in this file.
+      - key: S3_ENDPOINT_URL
+        scope: RUN_TIME
+        value: https://blr1.digitaloceanspaces.com
+      - key: S3_REGION
+        scope: RUN_TIME
+        value: blr1
+      - key: S3_BUCKET
+        scope: RUN_TIME
+        value: takeoff-files
+      - key: REDIS_URL
+        scope: RUN_TIME
+        value: ${queue.DATABASE_URL}

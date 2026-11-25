@@ -28,6 +28,15 @@ Product rules (non-negotiable):
   measured), `GET /drawings/{pid}/{name}.svg`. Drawings and `model.json` are still read from `app/data/<slug>/`
   until uploads store them (M1); `model.json` is cached — restart after changing it.
 - `app/api/compare.py` — notebook comparison and automatic issues.
+- `app/api/uploads.py` — `POST /api/projects/{pid}/uploads` (editor; multipart `files`; checks size and `%PDF-` only,
+  never opens the PDF; same SHA-256 → existing upload), `GET …/uploads`, `GET …/sheets`, `GET …/sheets/{id}/thumb.png|
+  display.png` (302 to a 10-minute storage link).
+- `app/pipeline/` — worker (`arq app.pipeline.jobs.WorkerSettings`). `stages.py`: `ingest` (pages → `sheets`, a page
+  already in the project by render fingerprint is skipped) → `render` (300 dpi viewer PNG, thumbnail, 300 dpi grayscale
+  for OCR). Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
+  `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
+  pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
+- `app/storage.py` — S3 API (Spaces / S3Mock); keys `p/{project}/u/{upload}/original.pdf`, `p/{project}/s/{sheet}/…`.
 - `app/data/<project>/` — `project.json` (meta, sheets, per-sheet beam hotspots in PDF points),
   `inputs.json` (assumptions, beams, bars, chajja, slab openings), `issues.json`, `notebook.json` (site QS
   takeoff), `model.json` (3D: beam centrelines, columns, slab outline, metres), `drawings/*.svg` (sheets rendered
@@ -53,7 +62,7 @@ Product rules (non-negotiable):
 
 Hash routes: `#signin[/expired]`, `#projects`, `#new`, and per project `#p/<slug>/<view>` where view is `overview`,
 `model[/B47]`, `drawings/<sheet>[/<beam>|/@x,y,zoom]`, `beams`, `beam/<name>`, `slab`, `issues`, `notebook`,
-`assumptions`, `upload`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
+`assumptions`, `upload[/<sheet id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
 in-project links with the `P` prefix (`href="${P}beams"`). A project with no measured floor shows only Overview
 (buildings and floors) and Add drawings.
 
@@ -64,7 +73,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000     # http://localhost:8000
 python -m pytest -q tests
 ```
-Database: `docker compose up -d db`, `cp .env.example .env`, `alembic upgrade head`,
+Database: `docker compose up -d` (Postgres, Redis, S3Mock), `cp .env.example .env`, `alembic upgrade head`,
 `python -m tools.import_pilot worklounge`. DB tests need `TEST_DATABASE_URL` (skipped otherwise; CI sets it).
 Docker: `docker build -t takeoff-web . && docker run -p 8000:8080 takeoff-web` (listens on `$PORT`, default 8080).
 

@@ -18,7 +18,13 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
+    s3_region: str | None = None             # Spaces: blr1; MinIO: leave empty
     secret_key: str | None = None            # reserved (CSRF tokens later); sessions are opaque DB tokens
+
+    # Uploads
+    max_upload_mb: int = 50                  # per file
+    max_uploads_per_project: int = 200
+    max_pages_per_upload: int = 100
 
     # Auth (magic link)
     app_url: str = 'http://localhost:8000'   # used to build sign-in links

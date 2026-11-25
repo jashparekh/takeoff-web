@@ -1,0 +1,134 @@
+"""Pipeline stages. Each one is idempotent: a `jobs` row keyed by stage, subject and input hash records that the
+work was done, so running a stage again (a retry, a duplicate queue message, a re-upload) does nothing new.
+
+These are plain functions taking a session and storage, so tests run them without Redis; `jobs.py` wraps them
+for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) for each new page. Classify and calibrate
+come next (plan M1 steps 6–7), then layout / schedule / slab by sheet type (M2–M5).
+"""
+from __future__ import annotations
+import logging
+import tempfile
+from contextlib import contextmanager
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from ..db.models import Job, Sheet, Upload
+from ..settings import get_settings
+from ..storage import Storage, sheet_key
+from . import pdf
+
+log = logging.getLogger('takeoff.pipeline')
+now = lambda: datetime.now(timezone.utc)                    # noqa: E731
+
+
+class Skip(Exception):
+    """The job already ran with this input."""
+
+
+@contextmanager
+def job(db: Session, stage: str, subject, input_hash: str, project_id, *, final: bool, upload_id=None,
+        sheet_id=None):
+    """Record a stage run. Raises Skip if it already finished. On error the row is marked failed only on the final
+    attempt (`final`), so the queue's retries see it as queued again."""
+    key = f'{stage}:{subject}:{input_hash}'
+    j = db.scalar(select(Job).where(Job.key == key).with_for_update())
+    if j is None:
+        j = Job(stage=stage, key=key, project_id=project_id, upload_id=upload_id, sheet_id=sheet_id, attempts=0)
+        db.add(j)
+        try:
+            db.flush()
+        except IntegrityError:                     # another worker created it first
+            db.rollback()
+            raise Skip(key)
+    if j.status == 'done':
+        raise Skip(key)
+    j.status, j.attempts, j.started_at, j.error = 'running', j.attempts + 1, now(), None
+    db.commit()
+    try:
+        yield j
+    except Exception as e:
+        db.rollback()
+        j = db.get(Job, j.id)
+        j.status, j.error, j.finished_at = ('failed' if final else 'queued'), f'{type(e).__name__}: {e}'[:2000], now()
+        db.commit()
+        raise
+    j.status, j.finished_at = 'done', now()
+    db.commit()
+
+
+def fetch(storage: Storage, key: str) -> tempfile._TemporaryFileWrapper:
+    f = tempfile.NamedTemporaryFile(suffix='.pdf')
+    f.write(storage.get(key))
+    f.flush()
+    return f
+
+
+def ingest(db: Session, storage: Storage, upload_id, *, final: bool = True) -> list:
+    """Split an upload into sheets. Pages already in the project (same page hash) are not added again.
+    Returns the ids of the new sheets, which each need `render`."""
+    up = db.get(Upload, upload_id)
+    if up is None:
+        return []
+    try:
+        with job(db, 'ingest', up.id, up.sha256, up.project_id, final=final, upload_id=up.id):
+            up.status, up.error = 'processing', None
+            db.commit()
+            with fetch(storage, up.storage_key) as f:
+                try:
+                    pages = pdf.inspect(f.name, get_settings().max_pages_per_upload)
+                except pdf.BadPdf as e:
+                    up.status, up.error = 'failed', str(e)
+                    db.commit()
+                    return []                     # the user's file is the problem; retrying won't help
+            have = set(db.scalars(select(Sheet.page_hash).where(Sheet.project_id == up.project_id)))
+            new = []
+            for p in pages:
+                if p.page_hash in have:
+                    continue
+                have.add(p.page_hash)
+                s = Sheet(project_id=up.project_id, upload_id=up.id, page_no=p.page_no, page_hash=p.page_hash,
+                          width_pt=p.width_pt, height_pt=p.height_pt, status='queued')
+                db.add(s)
+                new.append(s)
+            up.pages, up.new_sheets, up.status = len(pages), len(new), 'done'
+            db.flush()
+            return [s.id for s in new]
+    except Skip:
+        return [s.id for s in db.scalars(select(Sheet).where(Sheet.upload_id == upload_id, Sheet.status == 'queued'))]
+    except Exception:
+        if final:
+            up = db.get(Upload, upload_id)
+            up.status, up.error = 'failed', 'Something went wrong while reading this file. Try uploading it again.'
+            db.commit()
+        raise
+
+
+def render(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Draw the sheet: viewer PNG, thumbnail, 300 dpi grayscale for OCR."""
+    s = db.get(Sheet, sheet_id)
+    if s is None:
+        return
+    try:
+        with job(db, 'render', s.id, f'{s.page_hash}:dpi{pdf.DISPLAY_DPI}', s.project_id, final=final,
+                 sheet_id=s.id):
+            s.status, s.error = 'rendering', None
+            db.commit()
+            with fetch(storage, s.upload.storage_key) as f:
+                r = pdf.render_page(f.name, s.page_no)
+            for name, data in (('display.png', r.display), ('thumb.png', r.thumb), ('ocr300.png', r.ocr)):
+                storage.put(sheet_key(s.project_id, s.id, name), data, 'image/png')
+            s.display_key = sheet_key(s.project_id, s.id, 'display.png')
+            s.thumb_key = sheet_key(s.project_id, s.id, 'thumb.png')
+            s.ocr_key = sheet_key(s.project_id, s.id, 'ocr300.png')
+            s.display_dpi, s.status = r.display_dpi, 'ready'
+    except Skip:
+        return
+    except Exception:
+        if final:
+            s = db.get(Sheet, sheet_id)
+            s.status, s.error = 'needs_attention', 'This page could not be drawn. It is skipped; the others go on.'
+            db.commit()
+        raise
