@@ -50,7 +50,7 @@ form{{text-align:center}}button{{font:inherit;padding:.6em 1.6em;cursor:pointer}
 @router.get('/auth/callback', response_class=HTMLResponse)
 def callback(token: str):
     return HTMLResponse(PAGE.format(token=html.escape(token, quote=True)),
-                        headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
+                        headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'same-origin'})
 
 
 @router.post('/auth/verify')

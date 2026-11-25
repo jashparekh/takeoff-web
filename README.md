@@ -5,6 +5,7 @@ Web app for checking structural drawings and the steel, concrete and cement take
 Pilot project loaded: **Work Lounge, Hubballi**, second floor slab + beams (Manohar Consultants, R0 16.09.2026).
 
 ## Views
+- **Sign in / Projects / New project**: email sign-in link, the projects you've been added to, and a form to start a project (buildings → floors) before its drawings arrive.
 - **3D model**: the measured floor's beams, slab and columns in 3D (zoom, orbit, pan, top/below presets), other floors ghosted. Click any member to see its quantities and the working; colour by element, steel per metre, site check or issues.
 - **Overview**: steel by bar size, concrete and cement, cost per sq ft, open questions.
 - **Drawings**: the consultant's sheets at full resolution with every beam clickable, coloured by steel per metre, site-check difference or issues.
@@ -21,8 +22,8 @@ uvicorn app.main:app --reload
 python -m pytest -q tests
 ```
 
-### Database (upload pipeline, in progress)
-The app still serves the pilot from `app/data/` without a database. To work on the database side:
+### Database and sign-in
+Projects are read from Postgres and every page needs sign-in:
 ```
 docker compose up -d db                      # Postgres 16 (also: redis, minio)
 cp .env.example .env                         # local values only
@@ -31,17 +32,16 @@ python -m tools.import_pilot worklounge      # --replace to re-import
 createdb -h localhost -U takeoff takeoff_test
 TEST_DATABASE_URL=postgresql+psycopg://takeoff:takeoff@localhost:5432/takeoff_test python -m pytest -q tests
 ```
-Sign-in (magic link): grant yourself access with
-`python -m tools.users add you@example.com --project worklounge --role owner`, then `POST /api/auth/link`.
-With `MAIL_BACKEND=console` (the default) the link is printed in the server log instead of emailed;
-set `COOKIE_SECURE=false` for local http. The pilot views don't require sign-in yet.
+Grant yourself access with `python -m tools.users add you@example.com --project worklounge --role owner`, open
+http://localhost:8000 and ask for a sign-in link. With `MAIL_BACKEND=console` (the default) the link is printed in
+the server log instead of emailed; `COOKIE_SECURE=false` (in `.env.example`) is needed for local http.
 
 DB tests are skipped when `TEST_DATABASE_URL` is not set; CI always runs them. After changing `app/db/models.py`,
 add a migration with `alembic revision --autogenerate -m "..."` (a test fails if models and migrations differ).
 
 ## Layout
 - `app/engine.py`: quantity engine (explained steps).
-- `app/main.py`: FastAPI API + static frontend.
+- `app/main.py`: FastAPI app + static frontend. `app/api/`: projects API (database-backed, signed-in only).
 - `app/data/<project>/`: `project.json` (sheets, hotspots), `inputs.json` (beams, bars, assumptions), `issues.json`, `notebook.json`, `drawings/*.svg`.
 - `web/`: no-build frontend (ES modules).
 - `tools/import_workbook.py`: imports the pilot workbook inputs.

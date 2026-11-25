@@ -5,29 +5,227 @@ const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const fx = (v, n = 0) => v == null || isNaN(v) ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: n, minimumFractionDigits: n });
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const PID = 'worklounge';
-const S = { project: null, calc: null, base: null, overrides: {}, viewers: [] };
+let PID = null, P = '#';          // current project slug, and the hash prefix for its views: #p/<slug>/
+const S = { me: undefined, project: null, calc: null, base: null, overrides: {}, viewers: [] };
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
+const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'assumptions', 'upload'];
+const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload'].includes(v)));
 
+class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
 async function api(path, body) {
   const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
-  if (!r.ok) throw new Error(`${r.status} ${path}`);
-  return r.json();
+  if (r.status === 401 && !path.startsWith('/api/auth/')) { S.me = null; go('#signin'); throw new ApiError(401, 'Sign in required'); }
+  if (!r.ok) {
+    let d; try { d = (await r.json()).detail; } catch { }
+    throw new ApiError(r.status, typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg).join('; ') : null);
+  }
+  return r.status === 204 ? null : r.json();
 }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2600); }
+const go = (h, replace = false) => { if (replace) { history.replaceState(null, '', h); route(); } else if (location.hash !== h) location.hash = h; else route(); };
 
 async function boot() {
-  S.overrides = store.get(`ovr:${PID}`, {});
-  const [project, base] = await Promise.all([api(`/api/projects/${PID}`), api(`/api/projects/${PID}/calculate`, { overrides: {} })]);
-  S.project = project; S.base = base;
-  S.calc = Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : base;
-  S.sheets = Object.fromEntries(project.meta.sheets.map(s => [s.id, s]));
-  index();
-  const m = project.meta;
-  $('#projName').innerHTML = `<b>${esc(m.name)}</b>${esc(m.scope)}`;
-  $('#sideFoot').innerHTML = `${esc(m.consultant)} · ${esc(m.revision)}<br>${esc(m.status)}`;
   window.addEventListener('hashchange', route);
+  try { S.me = await api('/api/me'); } catch (e) { if (e.status !== 401) throw e; S.me = null; }
   route();
+}
+
+async function openProject(pid) {
+  if (PID === pid && S.project) return;
+  PID = pid; P = `#p/${encodeURIComponent(pid)}/`;
+  S.project = S.calc = S.base = null;
+  S.overrides = store.get(`ovr:${PID}`, {});
+  const project = await api(`/api/projects/${PID}`);
+  if (PID !== pid) return;
+  S.project = project;
+  S.sheets = Object.fromEntries((project.meta.sheets || []).map(s => [s.id, s]));
+  if (project.ready) {
+    S.base = await api(`/api/projects/${PID}/calculate`, { overrides: {} });
+    S.calc = Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : S.base;
+    index();
+  }
+}
+
+/* The side bar: inside a project it shows the project's views; elsewhere only the brand and the account. */
+function shell(mode) {
+  document.body.dataset.mode = mode;         // 'bare' (sign-in), 'home' (projects), 'project'
+  $('#nav').querySelectorAll('a').forEach(a => {
+    a.href = P + a.dataset.v;
+    a.hidden = mode !== 'project' || (NEEDS_CALC.has(a.dataset.v) && !S.project?.ready);
+  });
+  const m = S.project?.meta;
+  $('#projName').hidden = mode !== 'project';
+  if (m) $('#projName').innerHTML = `<a href="#projects" class="small">← All projects</a><b>${esc(m.name)}</b>${esc(m.scope || [m.client, m.city].filter(Boolean).join(' · '))}`;
+  const who = S.me ? `<div class="acct"><div>${esc(S.me.email)}</div><button class="link" id="signout">Sign out</button></div>` : '';
+  $('#sideFoot').innerHTML = (mode === 'project' && m ? `<div class="pmeta">${[m.consultant, m.revision].filter(Boolean).map(esc).join(' · ')}<br>${esc(m.status)}<hr></div>` : '') + who;
+  $('#signout')?.addEventListener('click', signOut);
+}
+
+let routing = 0;
+async function route() {
+  const mine = ++routing;
+  S.viewers.forEach(v => v.destroy()); S.viewers = []; if (S.m3d) { S.m3d.destroy(); S.m3d = null; }
+  const parts = location.hash.slice(1).split('/').map(decodeURIComponent);
+  if (PROJECT_VIEWS.includes(parts[0])) return go('#p/worklounge/' + location.hash.slice(1), true);   // links from before projects
+  if (parts[0] === 'signin') { shell('bare'); return signin(parts[1]); }
+  if (S.me === null) return go('#signin', true);
+  if (!parts[0] || parts[0] === 'projects') { shell('home'); return projectList(); }
+  if (parts[0] === 'new') { shell('home'); return newProject(); }
+  if (parts[0] !== 'p' || !parts[1]) return go('#projects', true);
+  let [, pid, v = 'overview', ...rest] = parts;
+  if (PID !== pid || !S.project) {
+    shell('home'); main.innerHTML = '<div class="loading">Loading project…</div>';
+    try { await openProject(pid); } catch (e) {
+      if (mine !== routing || e.status === 401) return;
+      PID = null; S.project = null;
+      main.innerHTML = header('Project not found', 'It does not exist, or you have not been added to it.', '<a class="btn" href="#projects">All projects</a>');
+      return;
+    }
+    if (mine !== routing) return;
+  }
+  if (!PROJECT_VIEWS.includes(v) || (NEEDS_CALC.has(v) && !S.project.ready)) return go(P + 'overview', true);
+  S.view = v;
+  shell('project');
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
+  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload };
+  views[v](...rest);
+  if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
+}
+
+/* ---------- sign in ---------- */
+function signin(state) {
+  const expired = state === 'expired';
+  main.innerHTML = `<div class="auth panel pad stack">
+    <a class="brand" href="#projects"><span class="logo" aria-hidden="true"></span>Takeoff</a>
+    <h1>Sign in</h1>
+    ${expired ? '<p class="note warn">That sign-in link has expired or was already used. Ask for a new one below.</p>' : ''}
+    <form id="signinForm" class="stack" novalidate>
+      <label class="stack small">Work email<input class="f" type="email" name="email" autocomplete="email" required autofocus></label>
+      <button class="btn pri" type="submit">Email me a sign-in link</button>
+    </form>
+    <p class="small muted">Takeoff is in a private beta. If your email has been invited, the link arrives within a minute and works for 15 minutes.</p>
+  </div>`;
+  $('#signinForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, email = f.email.value.trim(), btn = f.querySelector('button');
+    if (!f.email.checkValidity() || !email) { f.email.focus(); toast('Enter a valid email address'); return; }
+    btn.disabled = true;
+    try {
+      await api('/api/auth/link', { email });
+      f.outerHTML = `<div class="note ok"><b>Check your email.</b> If <b>${esc(email)}</b> has been invited, a sign-in link is on its way. Open it on this device.</div>`;
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.status === 429 ? 'Too many links asked for. Try again in 15 minutes.' : err.message);
+    }
+  });
+}
+
+async function signOut() {
+  try { await api('/api/auth/logout', {}); } catch { }
+  S.me = null; PID = null; S.project = null;
+  go('#signin');
+}
+
+/* ---------- projects ---------- */
+async function projectList() {
+  main.innerHTML = header('Projects', '') + '<div class="loading">Loading…</div>';
+  const list = await api('/api/projects');
+  if (location.hash.slice(1).split('/')[0] !== 'projects' && location.hash.slice(1)) return;
+  const roles = { owner: 'Owner', editor: 'Can edit', viewer: 'Can view' };
+  main.innerHTML = header('Projects', `${list.length} project${list.length === 1 ? '' : 's'}`, `<a class="btn pri" href="#new">New project</a>`) + (list.length ? `
+  <div class="cards">${list.map(p => `<a class="panel card" href="#p/${encodeURIComponent(p.id)}/overview">
+    <div class="row between"><b>${esc(p.name)}</b><span class="chip">${roles[p.role] || ''}</span></div>
+    <div class="small muted">${esc([p.client, p.city].filter(Boolean).join(' · ') || p.scope || '')}</div>
+    ${p.steel_t != null ? `<div class="row nums"><span><b>${fx(p.steel_t, 2)}</b> t steel</span><span><b>${fx(p.concrete_m3, 1)}</b> m³ concrete</span><span><b>₹${fx(p.per_sqft)}</b> /sq ft</span></div>`
+      : `<div class="small">${p.floors} floor${p.floors === 1 ? '' : 's'} · no drawings yet</div>`}
+    <div class="small muted">${esc(p.status || '')}${p.issues ? ` · ${p.issues} open issue${p.issues === 1 ? '' : 's'}` : ''}</div>
+  </a>`).join('')}</div>` : `<section class="panel pad stack"><p>No projects yet.</p><p class="small muted">Create one to set up its buildings and floors, then add drawings.</p><div><a class="btn pri" href="#new">New project</a></div></section>`);
+}
+
+const ORD = ['Ground', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth'];
+const floorName = i => (ORD[i] ? `${ORD[i]} floor` : `Floor ${i}`);
+const floorRow = (name = '', level = '', typ = 1) => `<tr class="fl">
+  <td><input class="f" name="fname" value="${esc(name)}" required maxlength="200" aria-label="Floor name"></td>
+  <td><input class="f num" name="level" type="number" step="0.01" value="${esc(level)}" placeholder="—" aria-label="Level in metres"></td>
+  <td><input class="f num" name="typ" type="number" min="1" max="100" value="${typ}" aria-label="Same floor repeated"></td>
+  <td><button type="button" class="btn sm" data-act="delfloor" aria-label="Remove floor">✕</button></td></tr>`;
+const buildingBlock = (n = 1) => `<fieldset class="bld panel pad stack">
+  <div class="row between"><h2>Building</h2><button type="button" class="btn sm" data-act="delbld">Remove building</button></div>
+  <div class="row">
+    <label class="stack small grow">Name<input class="f" name="bname" value="${n === 1 ? 'Main building' : `Building ${n}`}" required maxlength="200"></label>
+    <label class="stack small">Identical copies on site<input class="f num" name="copies" type="number" min="1" max="50" value="1"></label>
+  </div>
+  <div class="tw"><table class="floors"><thead><tr><th>Floor</th><th>Level (m, top of slab)</th><th>Typical × n</th><th></th></tr></thead>
+    <tbody>${floorRow(floorName(0))}</tbody></table></div>
+  <div><button type="button" class="btn sm" data-act="addfloor">Add floor</button></div>
+</fieldset>`;
+
+function newProject() {
+  main.innerHTML = `<div class="crumb"><a href="#projects">Projects</a> / New</div>` + header('New project', 'Name the project and list its buildings and floors. Drawings are added next.') + `
+  <form id="np" class="stack" novalidate>
+    <section class="panel pad stack">
+      <label class="stack small">Project name<input class="f" name="name" required maxlength="200" autofocus></label>
+      <div class="row">
+        <label class="stack small grow">Client<input class="f" name="client" maxlength="200"></label>
+        <label class="stack small grow">City<input class="f" name="city" maxlength="100"></label>
+      </div>
+      <label class="stack small">What is being measured (optional)<input class="f" name="scope" maxlength="500" placeholder="e.g. Slabs and beams, all floors"></label>
+    </section>
+    <div id="blds" class="stack">${buildingBlock()}</div>
+    <div class="row"><button type="button" class="btn" data-act="addbld">Add another building</button><span class="sp"></span>
+      <a class="btn" href="#projects">Cancel</a><button class="btn pri" type="submit">Create project</button></div>
+    <p class="small muted">Leave a level blank if you don't know it yet; it will be asked for before anything is calculated.</p>
+  </form>`;
+  const form = $('#np');
+  form.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const bld = b.closest('.bld');
+    if (b.dataset.act === 'addfloor') { const tb = bld.querySelector('tbody'); tb.insertAdjacentHTML('beforeend', floorRow(floorName(tb.children.length))); tb.lastElementChild.querySelector('input').focus(); }
+    if (b.dataset.act === 'delfloor') { const tb = bld.querySelector('tbody'); if (tb.children.length > 1) b.closest('tr').remove(); else toast('A building needs at least one floor'); }
+    if (b.dataset.act === 'addbld') $('#blds').insertAdjacentHTML('beforeend', buildingBlock($('#blds').children.length + 1));
+    if (b.dataset.act === 'delbld') { if ($('#blds').children.length > 1) bld.remove(); else toast('A project needs at least one building'); }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const bad = [...form.querySelectorAll('input')].find(i => !i.checkValidity() || (i.required && !i.value.trim()));
+    if (bad) { bad.focus(); toast(bad.name === 'name' ? 'Give the project a name' : 'Fill in the highlighted field'); return; }
+    const body = {
+      name: form.name.value, client: form.client.value, city: form.city.value, scope: form.scope.value,
+      buildings: [...form.querySelectorAll('.bld')].map(b => ({
+        name: b.querySelector('[name=bname]').value, copies: +b.querySelector('[name=copies]').value || 1,
+        floors: [...b.querySelectorAll('tr.fl')].map(r => ({
+          name: r.querySelector('[name=fname]').value, typical_count: +r.querySelector('[name=typ]').value || 1,
+          level_m: r.querySelector('[name=level]').value === '' ? null : +r.querySelector('[name=level]').value,
+        })),
+      })),
+    };
+    const btn = form.querySelector('[type=submit]'); btn.disabled = true;
+    try {
+      const { id } = await api('/api/projects', body);
+      S.me = await api('/api/me');
+      go(`#p/${encodeURIComponent(id)}/overview`);
+    } catch (err) { btn.disabled = false; toast(err.message); }
+  });
+}
+
+/* A project with no measured floor yet: show its buildings and floors, and what comes next. */
+function setup() {
+  const p = S.project, m = p.meta;
+  main.innerHTML = header(esc(m.name), esc([m.client, m.city, m.status].filter(Boolean).join(' · ')),
+    `<a class="btn pri" href="${P}upload">Add drawings</a>`) + `
+  <div class="grid g-main">
+    <section class="panel"><div class="hd"><h2>Buildings and floors</h2></div><div class="tw"><table>
+      <thead><tr><th>Building</th><th>Floor</th><th class="r">Level</th><th class="r">Typical × n</th><th>Drawings</th></tr></thead><tbody>
+      ${p.buildings.map(b => b.floors.map((f, i) => `<tr>${i === 0 ? `<td rowspan="${b.floors.length}"><b>${esc(b.name)}</b>${b.copies > 1 ? `<div class="small muted">× ${b.copies} on site</div>` : ''}</td>` : ''}
+        <td>${esc(f.name)}</td><td class="r mono nowrap">${f.level_m == null ? '<span class="muted">not given</span>' : `${fx(f.level_m, 2)} m`}</td><td class="r mono">${f.typical_count}</td>
+        <td>${f.measured ? 'Read' : '<span class="muted">Not yet</span>'}</td></tr>`).join('')).join('')}
+      </tbody></table></div></section>
+    <section class="panel pad stack"><h2>Next</h2><ol class="flow small">
+      <li>Add the structural drawings for each floor: beam layout, beam schedules, slab layouts.</li>
+      <li>Check what was read, and answer the values the drawings don't give.</li>
+      <li>Quantities, bar schedules and costs appear here with the working for every number.</li>
+    </ol><div><a class="btn pri" href="${P}upload">Add drawings</a></div></section>
+  </div>`;
 }
 
 function index() {
@@ -45,15 +243,6 @@ function index() {
   if (c.notebook) for (const r of c.notebook.rows) for (const n of r.beams) S.site[n.split('-')[0]] = r;
   $('#issueCount').textContent = S.issues.length;
   const n = Object.keys(S.overrides).length; const oc = $('#ovrCount'); oc.hidden = !n; oc.textContent = n;
-}
-
-function route() {
-  S.viewers.forEach(v => v.destroy()); S.viewers = []; if (S.m3d) { S.m3d.destroy(); S.m3d = null; }
-  const [v, ...rest] = (location.hash.slice(1) || 'overview').split('/').map(decodeURIComponent);
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload };
-  (views[v] || overview)(...rest);
-  if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
 
 /* ---------- shared bits ---------- */
@@ -86,7 +275,7 @@ function overview() {
   const nb = S.calc.notebook?.totals;
   const open = S.issues.filter(i => i.severity !== 'low');
   main.innerHTML = header(esc(S.project.meta.name), `${esc(S.project.meta.scope)} · ${S.members.length} beams · ${esc(S.project.meta.status)}`,
-    `<a class="btn" href="#drawings">Open drawings</a><a class="btn pri" href="#beams">Beam by beam</a>`) + kpis() + `
+    `<a class="btn" href="${P}drawings">Open drawings</a><a class="btn pri" href="${P}beams">Beam by beam</a>`) + kpis() + `
   <div class="grid g-main">
     <div class="stack">
       <section class="panel"><div class="hd"><h2>Steel by bar size</h2><span class="muted small">kg · rates ${esc('₹/kg')} incl. Fe550 premium</span></div>
@@ -94,22 +283,22 @@ function overview() {
         ${s.by_dia.map(r => `<tr><td class="mono">${r.dia} mm</td><td class="num">${fx(r.beams)}</td><td class="num">${r.slab ? fx(r.slab) : '—'}</td><td class="num">${fx(r.total)}</td><td class="num">${fx(r.with_wastage)}</td><td class="num">${fx(r.cost)}</td></tr>`).join('')}
         <tr class="tot"><td>Total</td><td class="num">${fx(s.beam_steel_kg)}</td><td class="num">${fx(s.slab_steel_kg)}</td><td class="num">${fx(s.steel_kg)}</td><td class="num">${fx(s.steel_with_wastage_kg)}</td><td class="num">${fx(s.steel_cost)}</td></tr>
         </tbody></table></div></section>
-      <section class="panel"><div class="hd"><h2>Concrete and cement</h2><a class="small" href="#slab">Slab working</a></div>
+      <section class="panel"><div class="hd"><h2>Concrete and cement</h2><a class="small" href="${P}slab">Slab working</a></div>
         <div class="pad stack">${steps([
           { label: 'Beams below slab', formula: 'Σ b × (D − slab t) × L', working: `${S.members.length} beams`, value: s.beam_concrete_m3, unit: 'm³' },
           { label: 'Slab', formula: 'net area × thickness', working: `${fx(S.calc.slab.area_m2, 1)} m² × ${fx(S.calc.assumptions.slab_t_in * 25.4)} mm`, value: s.slab_concrete_m3, unit: 'm³' },
           ...s.concrete_steps])}</div></section>
     </div>
     <div class="stack">
-      <section class="panel"><div class="hd"><h2>Needs an answer</h2><a class="small" href="#issues">All ${S.issues.length}</a></div>
-        ${open.map(i => `<a href="#issues" style="display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit">${sevChip(i.severity)}<span>${esc(i.title)}</span></a>`).join('')}</section>
-      ${nb ? `<section class="panel"><div class="hd"><h2>Site QS notebook</h2><a class="small" href="#notebook">Compare</a></div><div class="pad stack small">
+      <section class="panel"><div class="hd"><h2>Needs an answer</h2><a class="small" href="${P}issues">All ${S.issues.length}</a></div>
+        ${open.map(i => `<a href="${P}issues" style="display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit">${sevChip(i.severity)}<span>${esc(i.title)}</span></a>`).join('')}</section>
+      ${nb ? `<section class="panel"><div class="hd"><h2>Site QS notebook</h2><a class="small" href="${P}notebook">Compare</a></div><div class="pad stack small">
         <div class="row"><span class="sp">Notebook, beams</span><b class="mono">${fx(nb.beams.theirs)} kg</b></div>
         <div class="row"><span class="sp">Takeoff, beams</span><b class="mono">${fx(nb.beams.ours)} kg</b></div>
         <div class="row"><span class="sp">Difference</span><b class="mono up">+${fx(nb.beams.diff)} kg (${fx(nb.beams.diff / nb.beams.ours * 100)}%)</b></div>
         <p class="muted">Mostly extra bars counted full length and overall beam length used for every bar.</p></div></section>` : ''}
       <section class="panel"><div class="hd"><h2>Heaviest beams</h2><span class="muted small">kg</span></div><div class="pad stack" style="gap:7px">
-        ${top.map(m => `<a href="#beam/${m.name}" class="row" style="text-decoration:none;color:inherit;flex-wrap:nowrap"><span class="mono" style="width:52px">${m.name}</span><span class="hbar sp"><i style="width:${m.kg / mx * 100}%"></i></span><span class="mono" style="width:44px;text-align:right">${fx(m.kg)}</span></a>`).join('')}
+        ${top.map(m => `<a href="${P}beam/${m.name}" class="row" style="text-decoration:none;color:inherit;flex-wrap:nowrap"><span class="mono" style="width:52px">${m.name}</span><span class="hbar sp"><i style="width:${m.kg / mx * 100}%"></i></span><span class="mono" style="width:44px;text-align:right">${fx(m.kg)}</span></a>`).join('')}
       </div></section>
     </div>
   </div>`;
@@ -138,14 +327,14 @@ function drawings(sheetId = 'layout', target) {
   const sh = S.sheets[sheetId] || S.sheets.layout;
   main.innerHTML = header('Drawings', `${esc(sh.drg)} · ${esc(sh.title)} · scroll or pinch to zoom, drag to move`,
     `<div class="seg" id="modes">${Object.entries(MODES).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>`) + `
-  <div class="row">${S.project.meta.sheets.map(s => `<a class="btn sm ${s.id === sh.id ? 'pri' : ''}" href="#drawings/${s.id}">${esc(s.drg)} ${esc(s.title.split(' (')[0])}</a>`).join('')}</div>
+  <div class="row">${S.project.meta.sheets.map(s => `<a class="btn sm ${s.id === sh.id ? 'pri' : ''}" href="${P}drawings/${s.id}">${esc(s.drg)} ${esc(s.title.split(' (')[0])}</a>`).join('')}</div>
   <div class="dside"><div id="vw"></div><aside class="panel" id="pick"><div class="pad muted">Tap a beam marker to see its steel, the working and any issues.</div></aside></div>`;
   const hs = () => Object.entries(sh.hotspots).filter(([n]) => S.byName[n]).map(([n, h]) => ({ id: n, x: h.x, y: h.y, label: n, color: colorFor(store.get('mode', 'steel'), n) }));
   const v = mount($('#vw'), sh.id, { hotspots: hs(), legend: Object.keys(sh.hotspots).length ? LEG[mode] : '', onPick: h => pick(h.id) });
   const pick = name => {
     v.select(name);
     const m = S.byName[name], r = S.site[name], iss = S.issueBeams[name] || [];
-    $('#pick').innerHTML = `<div class="hd"><h2>${name}</h2><a class="btn sm pri" href="#beam/${name}">Open</a></div><div class="pad stack small">
+    $('#pick').innerHTML = `<div class="hd"><h2>${name}</h2><a class="btn sm pri" href="${P}beam/${name}">Open</a></div><div class="pad stack small">
       <div class="row"><span class="sp muted">Size · span</span><span class="mono">${m.size}″ · ${fx(m.span_in * 25.4)} mm</span></div>
       <div class="row"><span class="sp muted">Steel</span><b class="mono">${fx(m.kg, 1)} kg</b></div>
       <div class="row"><span class="sp muted">Per metre</span><span class="mono">${fx(m.kg_m, 1)} kg/m</span></div>
@@ -153,7 +342,7 @@ function drawings(sheetId = 'layout', target) {
       ${r ? `<div class="row"><span class="sp muted">Site notebook (${esc(r.label)})</span><span class="mono ${r.diff_kg > 0 ? 'up' : 'dn'}">${fx(r.theirs_kg)} vs ${fx(r.ours_kg)}</span></div>` : ''}
       ${iss.map(i => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${sevChip(i.severity)}<span>${esc(i.title)}</span></div>`).join('')}
       ${m.parts.length > 1 ? `<div class="muted">Includes ${m.parts.join(', ')}</div>` : ''}</div>`;
-    history.replaceState(null, '', `#drawings/${sh.id}/${name}`);
+    history.replaceState(null, '', `${P}drawings/${sh.id}/${name}`);
   };
   $('#modes').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -195,12 +384,12 @@ async function model(target) {
     <aside class="panel m3side" id="m3pick"><div class="pad stack small">
       <p class="muted">Click a beam, the slab or a column to see how its quantities were worked out.</p>
       <div class="row"><span class="sp">Beams placed in 3D</span><b class="mono">${new Set(md.beams.map(b => b.name.split('-')[0])).size} of ${S.members.length}</b></div>
-      ${md.unplaced.length ? `<p class="muted">Not placed (label not matched on the layout): ${md.unplaced.map(n => `<a href="#beam/${n.split('-')[0]}">${n}</a>`).join(', ')}. Their steel is still counted.</p>` : ''}
+      ${md.unplaced.length ? `<p class="muted">Not placed (label not matched on the layout): ${md.unplaced.map(n => `<a href="${P}beam/${n.split('-')[0]}">${n}</a>`).join(', ')}. Their steel is still counted.</p>` : ''}
       <p class="muted">Floor-to-floor height is taken as 3.0 m for the picture. Only the second floor is measured; the other floors repeat its outline faintly for context.</p>
     </div></aside>
   </div>`;
   const { Model3D } = await import('./model3d.js');
-  if (location.hash.split('/')[0] !== '#model') return;
+  if (S.view !== 'model') return;
   const m3 = S.m3d = new Model3D($('#m3'), {
     model: md, calc: S.calc, onPick: sel => m3panel(sel),
     onHover: (h, e) => {
@@ -227,8 +416,8 @@ function m3panel(sel) {
   if (!sel) return;
   if (sel.kind === 'beam') {
     const m = S.byName[sel.id]; const r = S.site[sel.id], iss = S.issueBeams[sel.id] || [];
-    history.replaceState(null, '', `#model/${sel.id}`);
-    el.innerHTML = `<div class="hd"><h2>Beam ${m.name}</h2><a class="btn sm pri" href="#beam/${m.name}">Full detail</a></div><div class="pad stack small">
+    history.replaceState(null, '', `${P}model/${sel.id}`);
+    el.innerHTML = `<div class="hd"><h2>Beam ${m.name}</h2><a class="btn sm pri" href="${P}beam/${m.name}">Full detail</a></div><div class="pad stack small">
       <div class="row"><span class="sp muted">Size · clear span</span><span class="mono">${m.size}″ · ${fx(m.span_in * 25.4)} mm</span></div>
       <div class="row"><span class="sp">Steel</span><b class="mono">${fx(m.kg, 2)} kg</b></div>
       ${m.partsData.map(p => `<div class="m3part"><div class="row"><b>${esc(p.name)}</b><span class="muted">${p.kind === 'C' ? 'cantilever' : 'span'}</span><span class="sp"></span><span class="mono">${fx(p.kg, 2)} kg</span></div>
@@ -237,10 +426,10 @@ function m3panel(sel) {
         <details class="m3bar"><summary>Concrete below slab<span class="sp"></span><span class="mono">${fx(p.concrete.value, 3)} m³</span></summary>${steps([p.concrete])}</details></div>`).join('')}
       ${r ? `<div class="row"><span class="sp muted">Site notebook (${esc(r.label)})</span><span class="mono ${r.diff_kg > 0 ? 'up' : 'dn'}">${fx(r.theirs_kg)} vs ${fx(r.ours_kg)} kg</span></div>` : ''}
       ${iss.map(i => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${sevChip(i.severity)}<span>${esc(i.title)}</span></div>`).join('')}
-      <a class="small" href="#drawings/layout/${m.name}">Show on drawing</a></div>`;
+      <a class="small" href="${P}drawings/layout/${m.name}">Show on drawing</a></div>`;
   } else if (sel.kind === 'slab') {
     const sl = S.calc.slab, a = S.calc.assumptions;
-    el.innerHTML = `<div class="hd"><h2>Second floor slab</h2><a class="btn sm pri" href="#slab">Full detail</a></div><div class="pad stack small">
+    el.innerHTML = `<div class="hd"><h2>Second floor slab</h2><a class="btn sm pri" href="${P}slab">Full detail</a></div><div class="pad stack small">
       <div class="row"><span class="sp muted">Thickness</span><span class="mono">${a.slab_t_in}″ (${fx(a.slab_t_in * 25.4)} mm)</span></div>
       <div class="row"><span class="sp">Steel</span><b class="mono">${fx(sl.kg, 1)} kg</b></div>
       <div class="row"><span class="sp">Concrete</span><b class="mono">${fx(sl.concrete_m3, 2)} m³</b></div>
@@ -254,7 +443,7 @@ function m3panel(sel) {
       <div class="row"><span class="sp muted">Size as drawn</span><span class="mono">9″ × 24″ (229 × 610)</span></div>
       <p class="muted">Add the column schedule to take off column steel and concrete.</p></div>`;
   } else if (sel.kind === 'ghost') {
-    el.innerHTML = `<div class="hd"><h2>Floor ${sel.level ?? ''}</h2></div><div class="pad small stack"><p>Not measured. Only the second floor structural drawings have been received; this outline repeats the second floor for context.</p><a href="#upload">Add drawings for other floors</a></div>`;
+    el.innerHTML = `<div class="hd"><h2>Floor ${sel.level ?? ''}</h2></div><div class="pad small stack"><p>Not measured. Only the second floor structural drawings have been received; this outline repeats the second floor for context.</p><a href="${P}upload">Add drawings for other floors</a></div>`;
   }
 }
 
@@ -282,7 +471,7 @@ function beams() {
   $('#bq').addEventListener('input', e => { q = e.target.value; store.set('bq', q); render(); });
   $('#bt').addEventListener('click', e => {
     const th = e.target.closest('th.sort'); if (th) { const k = th.dataset.k; store.set('bsort', { k, d: sort.k === k ? -sort.d : (k === 'name' ? 1 : -1) }); return beams(); }
-    const tr = e.target.closest('tr[data-n]'); if (tr) location.hash = '#beam/' + tr.dataset.n;
+    const tr = e.target.closest('tr[data-n]'); if (tr) location.hash = P + 'beam/' + tr.dataset.n;
   });
 }
 
@@ -297,13 +486,13 @@ function bbs(part) {
 }
 function beam(name) {
   const m = S.byName[name];
-  if (!m) { main.innerHTML = header('Beam not found', `<a href="#beams">Back to beams</a>`); return; }
+  if (!m) { main.innerHTML = header('Beam not found', `<a href="${P}beams">Back to beams</a>`); return; }
   const a = S.calc.assumptions, r = S.site[name], iss = S.issueBeams[name] || [];
   const order = S.members.map(x => x.name), i = order.indexOf(name);
   const loc = S.project.meta.sheets.filter(s => s.hotspots[name]);
-  main.innerHTML = `<div class="crumb"><a href="#beams">Beams</a> / ${name}</div>` + header(`Beam ${name}`,
+  main.innerHTML = `<div class="crumb"><a href="${P}beams">Beams</a> / ${name}</div>` + header(`Beam ${name}`,
     `${m.size}″ · clear span ${fx(m.span_in * 25.4)} mm · ${fx(m.kg, 1)} kg steel · ${fx(m.kg_m, 1)} kg/m`,
-    `${i > 0 ? `<a class="btn sm" href="#beam/${order[i - 1]}">← ${order[i - 1]}</a>` : ''}${i < order.length - 1 ? `<a class="btn sm" href="#beam/${order[i + 1]}">${order[i + 1]} →</a>` : ''}`) + `
+    `${i > 0 ? `<a class="btn sm" href="${P}beam/${order[i - 1]}">← ${order[i - 1]}</a>` : ''}${i < order.length - 1 ? `<a class="btn sm" href="${P}beam/${order[i + 1]}">${order[i + 1]} →</a>` : ''}`) + `
   <div class="grid g-main">
     <div class="stack">
       ${m.partsData.map((p, pi) => `<section class="panel bd"><div class="hd"><h2>${p.kind === 'C' ? `${esc(p.name)} · cantilever` : 'Elevation as drawn'}</h2>
@@ -320,8 +509,8 @@ function beam(name) {
         <p class="muted">${esc(m.partsData[0].concrete.formula)} = ${esc(m.partsData[0].concrete.working)}</p></div></section>
       ${r ? siteCard(r, name) : ''}
       ${iss.length ? `<section class="panel"><div class="hd"><h2>Issues</h2></div>${iss.map(i => `<div class="pad" style="border-bottom:1px solid var(--line)"><div class="row">${sevChip(i.severity)}<b>${esc(i.title)}</b></div><p class="small muted" style="margin-top:4px">${esc(i.ask)}</p></div>`).join('')}</section>` : ''}
-      ${loc.map(s => `<section class="panel"><div class="hd"><h2>${esc(s.drg)}</h2><a class="small" href="#drawings/${s.id}/${name}">Open sheet</a></div><div class="mini" id="mini-${s.id}"></div></section>`).join('')}
-      <section class="panel pad small muted">Assumptions used: Ld ${a.ld_factor}d · cover ${a.cover_mm} mm · bottom anchorage ${a.bot_anch_mm} mm · extra bottom ${a.extra_bot_frac}L · slab ${a.slab_t_in}″. <a href="#assumptions">Change</a></section>
+      ${loc.map(s => `<section class="panel"><div class="hd"><h2>${esc(s.drg)}</h2><a class="small" href="${P}drawings/${s.id}/${name}">Open sheet</a></div><div class="mini" id="mini-${s.id}"></div></section>`).join('')}
+      <section class="panel pad small muted">Assumptions used: Ld ${a.ld_factor}d · cover ${a.cover_mm} mm · bottom anchorage ${a.bot_anch_mm} mm · extra bottom ${a.extra_bot_frac}L · slab ${a.slab_t_in}″. <a href="${P}assumptions">Change</a></section>
     </div>
   </div>`;
   main.querySelectorAll('[data-bbs]').forEach(t => t.addEventListener('click', e => {
@@ -330,13 +519,13 @@ function beam(name) {
   }));
   for (const s of loc) {
     const h = s.hotspots[name];
-    const v = mount($(`#mini-${s.id}`), s.id, { hotspots: [{ id: name, x: h.x, y: h.y, label: name, color: '#C2410C' }], tools: false, onPick: () => location.hash = `#drawings/${s.id}/${name}` });
+    const v = mount($(`#mini-${s.id}`), s.id, { hotspots: [{ id: name, x: h.x, y: h.y, label: name, color: '#C2410C' }], tools: false, onPick: () => location.hash = `${P}drawings/${s.id}/${name}` });
     requestAnimationFrame(() => v.focus(h.x, h.y, 5));
   }
 }
 function siteCard(r, name) {
   const dias = [...new Set([...Object.keys(r.ours_by_dia || {}), ...Object.keys(r.theirs_by_dia || {})])].sort((a, b) => a - b);
-  return `<section class="panel"><div class="hd"><h2>Site QS notebook</h2><a class="small" href="#notebook">All beams</a></div><div class="pad stack small">
+  return `<section class="panel"><div class="hd"><h2>Site QS notebook</h2><a class="small" href="${P}notebook">All beams</a></div><div class="pad stack small">
     <div class="muted">Notebook entry “${esc(r.label)}”${r.beams.length > 1 ? ` covers ${r.beams.map(b => b.split('-')[0]).filter((v, i, x) => x.indexOf(v) === i).join(', ')}` : ''}.</div>
     ${r.theirs_by_dia ? `<div class="tw"><table><thead><tr><th>Bar</th><th class="r">Notebook ft</th><th class="r">Notebook kg</th><th class="r">Takeoff kg</th></tr></thead><tbody>
       ${dias.map(d => `<tr><td class="mono">${d}φ</td><td class="num">${r.feet[d] ? r.feet[d].join(' + ') : '—'}</td><td class="num">${fx(r.theirs_by_dia[d], 1)}</td><td class="num">${fx(r.ours_by_dia[d], 1)}</td></tr>`).join('')}
@@ -353,10 +542,10 @@ function slab() {
   <div class="grid g-main"><div class="stack">
     <section class="panel"><div class="hd"><h2>How the slab was measured</h2></div><div class="pad stack">${steps(sl.steps)}
       <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="sp">Total slab steel</span><b class="mono">${fx(sl.kg, 1)} kg</b></div></div></section>
-    <section class="panel pad small muted">The slab is measured with average spacings read off the bottom and top slab layouts, not panel by panel. Panel-by-panel reading is planned for the upload pipeline. Spacings and extension are editable in <a href="#assumptions">Assumptions</a>.</section>
+    <section class="panel pad small muted">The slab is measured with average spacings read off the bottom and top slab layouts, not panel by panel. Panel-by-panel reading is planned for the upload pipeline. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>
   </div><div class="stack">
-    <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabbot.drg)} bottom</h2><a class="small" href="#drawings/slabbot">Open</a></div><div class="mini" id="m1" style="height:300px"></div></section>
-    <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabtop.drg)} top</h2><a class="small" href="#drawings/slabtop">Open</a></div><div class="mini" id="m2" style="height:300px"></div></section>
+    <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabbot.drg)} bottom</h2><a class="small" href="${P}drawings/slabbot">Open</a></div><div class="mini" id="m1" style="height:300px"></div></section>
+    <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabtop.drg)} top</h2><a class="small" href="${P}drawings/slabtop">Open</a></div><div class="mini" id="m2" style="height:300px"></div></section>
   </div></div>`;
   mount($('#m1'), 'slabbot', { tools: false }); mount($('#m2'), 'slabtop', { tools: false });
 }
@@ -364,9 +553,9 @@ function slab() {
 /* ---------- issues ---------- */
 function whereLink(w) {
   if (!w) return '';
-  if (w.beam) return `#drawings/${w.sheet}/${w.beam}`;
-  if (w.x) return `#drawings/${w.sheet}/@${w.x},${w.y},${w.zoom || 3}`;
-  return `#drawings/${w.sheet}`;
+  if (w.beam) return `${P}drawings/${w.sheet}/${w.beam}`;
+  if (w.x) return `${P}drawings/${w.sheet}/@${w.x},${w.y},${w.zoom || 3}`;
+  return `${P}drawings/${w.sheet}`;
 }
 function issues() {
   const order = { high: 0, medium: 1, low: 2 };
@@ -376,7 +565,7 @@ function issues() {
   <section class="panel">${list.map(i => `<div class="iss"><div><div class="row">${sevChip(i.severity)}<span class="chip">${esc(i.kind)}</span>${i.auto ? '<span class="chip acc">found by Takeoff</span>' : ''}</div>
     <div class="t" style="margin-top:6px">${esc(i.title)}</div><p class="small" style="margin-top:4px;color:var(--fg2)">${esc(i.detail)}</p>
     <dl><dt>Using for now</dt><dd>${esc(i.assumption)}</dd><dt>Affects</dt><dd>${esc(i.affects)}</dd><dt>Ask</dt><dd>${esc(i.ask)}</dd>
-    ${i.beams ? `<dt>Beams</dt><dd>${i.beams.map(b => S.byName[b] ? `<a href="#beam/${b}">${b}</a>` : b).join(', ')}</dd>` : ''}</dl></div>
+    ${i.beams ? `<dt>Beams</dt><dd>${i.beams.map(b => S.byName[b] ? `<a href="${P}beam/${b}">${b}</a>` : b).join(', ')}</dd>` : ''}</dl></div>
     <div class="acts">${i.where ? `<a class="btn sm" href="${whereLink(i.where)}">Show on drawing</a>` : ''}</div></div>`).join('')}</section>`;
   $('#copy').addEventListener('click', async () => {
     const txt = `${S.project.meta.name}: questions on ${S.project.meta.scope} (${S.project.meta.revision})\n\n` + list.map((i, n) => `${n + 1}. ${i.ask} (${i.title}; using ${i.assumption} for now)`).join('\n');
@@ -403,7 +592,7 @@ function notebook() {
     <tr class="tot"><td>Page 1 (B1–B35)</td><td></td><td class="num">${fx(t.page1.theirs)}</td><td class="num">${fx(t.page1.ours)}</td><td class="num up">+${fx(t.page1.theirs - t.page1.ours)}</td><td colspan="2"></td></tr>
     <tr class="tot"><td>Pages 2+ (B36–B93)</td><td></td><td class="num">${fx(t.page2.theirs)}</td><td class="num">${fx(t.page2.ours)}</td><td class="num up">+${fx(t.page2.theirs - t.page2.ours)}</td><td colspan="2"></td></tr>
   </tbody></table></div></section>`;
-  main.querySelector('tbody').addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) location.hash = '#beam/' + tr.dataset.n; });
+  main.querySelector('tbody').addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) location.hash = P + 'beam/' + tr.dataset.n; });
 }
 
 /* ---------- assumptions ---------- */
@@ -440,7 +629,7 @@ function upload() {
   main.innerHTML = header('Add drawings', 'Coming next: upload a new project\'s PDFs and get the same views.') + `
   <div class="grid g2"><section class="panel pad stack">
     <div class="drop"><b style="color:var(--fg)">Drop structural PDFs here</b><span>Beam layout, beam schedules, slab layouts</span><button class="btn" disabled>Choose files</button></div>
-    <p class="small muted">Upload is switched off in this version. The Work Lounge pilot above was read with the same steps the uploader will run.</p></section>
+    <p class="small muted">Upload is switched off in this version. The Work Lounge pilot was read with the same steps the uploader will run.</p></section>
   <section class="panel pad stack"><h2>What happens to an upload</h2><ol class="flow small">
     <li>Each sheet is stored and shown here at full resolution, so you can zoom into any detail.</li>
     <li>Beam names, sizes, spans and bar callouts are read from the layout and the schedules. Anything unreadable is listed for you to fill in, never guessed.</li>
@@ -450,4 +639,4 @@ function upload() {
   </ol></section></div>`;
 }
 
-boot().catch(e => { main.innerHTML = `<div class="pad">Could not load the project. ${esc(e.message)}</div>`; console.error(e); });
+boot().catch(e => { main.innerHTML = `<div class="pad">Could not load Takeoff. ${esc(e.message)}</div>`; console.error(e); });

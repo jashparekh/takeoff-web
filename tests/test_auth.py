@@ -1,4 +1,3 @@
-import re
 from datetime import timedelta
 
 import pytest
@@ -9,9 +8,9 @@ from sqlalchemy import select
 from app.auth import core, mail
 from app.auth.deps import project_role
 from app.db.models import LoginToken, Project, ProjectMember, User
-from app.db.session import get_db
 from app.main import app
 from app.settings import get_settings
+from conftest import link_token, sign_in
 
 # Test-only routes to exercise the access dependency.
 probe = APIRouter()
@@ -28,31 +27,6 @@ def edit(p: Project = Depends(project_role('editor'))):
 
 
 app.include_router(probe)
-
-
-@pytest.fixture
-def client(session, monkeypatch):
-    monkeypatch.setenv('COOKIE_SECURE', 'false')
-    monkeypatch.setenv('SIGNUP_ALLOWLIST', 'new@example.com,@firm.in')
-    monkeypatch.setenv('MAIL_BACKEND', 'console')
-    get_settings.cache_clear()
-    mail.outbox.clear()
-    app.dependency_overrides[get_db] = lambda: session
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-    get_settings.cache_clear()
-
-
-def link_token() -> str:
-    body = mail.outbox[-1].get_content()
-    return re.search(r'token=([\w\-%]+)', body).group(1)
-
-
-def sign_in(client, email: str) -> None:
-    assert client.post('/api/auth/link', json=dict(email=email)).status_code == 202
-    r = client.post('/auth/verify', data=dict(token=link_token()), follow_redirects=False)
-    assert r.status_code == 303 and r.headers['location'] == '/'
-    assert core.COOKIE in client.cookies
 
 
 def test_unknown_email_gets_same_answer_but_no_mail(client):
@@ -77,7 +51,9 @@ def test_callback_page_does_not_use_up_the_token(client):
     tok = link_token()
     page = client.get(f'/auth/callback?token={tok}')
     assert page.status_code == 200 and 'action="/auth/verify"' in page.text and page.headers['cache-control'] == 'no-store'
-    r = client.post('/auth/verify', data=dict(token=tok), follow_redirects=False)
+    # 'no-referrer' would make browsers send `Origin: null` on the form post, which the cross-site check refuses.
+    assert page.headers['referrer-policy'] == 'same-origin'
+    r = client.post('/auth/verify', data=dict(token=tok), headers={'Origin': 'http://testserver'}, follow_redirects=False)
     assert r.headers['location'] == '/'
 
 
@@ -171,10 +147,6 @@ def test_cross_site_write_refused(client):
     assert r.status_code == 403 and mail.outbox == []
     r = client.post('/api/auth/link', json=dict(email='new@example.com'), headers={'Origin': 'http://testserver'})
     assert r.status_code == 202
-
-
-def test_pilot_views_still_open_without_sign_in(client):
-    assert client.get('/api/projects').status_code == 200
 
 
 def test_no_database_gives_503(monkeypatch):
