@@ -36,6 +36,11 @@ Product rules (non-negotiable):
   `model.json` from the beam layout PDF vectors (needs pymupdf, scipy, opencv-python, pillow).
 - `docs/` — pilot workbook and the B47 explainer PDF.
 - `tests/test_engine.py` — pins pilot totals; keep green.
+- Database (upload pipeline M0, in progress): `app/settings.py` (env / `.env`), `app/db/models.py` (SQLAlchemy),
+  `app/db/migrations/` (Alembic; `alembic upgrade head`), `app/services/inputs_builder.py` (DB rows → the engine's
+  `inputs` dict, so the engine stays unchanged), `tools/import_pilot.py` (loads `app/data/<slug>` into the DB).
+  Until members/bars tables exist (M2–M3), a floor's beams/chajja/slab sit in `floors.structure_json`.
+  The API does not read the DB yet. Plan: `docs/plans/upload-pipeline-implementation.md`.
 
 Hash routes: `#overview`, `#model[/B47]`, `#drawings/<sheet>[/<beam>|/@x,y,zoom]`, `#beams`, `#beam/<name>`,
 `#slab`, `#issues`, `#notebook`, `#assumptions`, `#upload`.
@@ -47,6 +52,8 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000     # http://localhost:8000
 python -m pytest -q tests
 ```
+Database: `docker compose up -d db`, `cp .env.example .env`, `alembic upgrade head`,
+`python -m tools.import_pilot worklounge`. DB tests need `TEST_DATABASE_URL` (skipped otherwise; CI sets it).
 Docker: `docker build -t takeoff-web . && docker run -p 8000:8080 takeoff-web` (listens on `$PORT`, default 8080).
 
 ## Engine conventions (pilot 2 method)

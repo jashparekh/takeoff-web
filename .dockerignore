@@ -5,3 +5,7 @@ tools
 __pycache__
 *.pyc
 .pytest_cache
+!tools/__init__.py
+!tools/import_pilot.py
+.venv
+.env
