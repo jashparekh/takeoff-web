@@ -20,10 +20,14 @@ Product rules (non-negotiable):
 ## Repo layout
 - `app/engine.py` — quantity engine. `Calc(inputs, overrides).run()` returns summary, per-beam bars with
   `steps` (label, formula, working, value, unit), slab steps, chajja (CB1) and members (cantilever parts merged).
-- `app/main.py` — FastAPI. `GET /api/projects`, `GET /api/projects/{id}` (meta, assumptions, issues, model,
-  beams_input), `POST /api/projects/{id}/calculate {overrides}` (engine + notebook comparison + auto issues),
-  `GET /drawings/{id}/{name}.svg`, static frontend at `/static`, `/` serves `web/index.html`.
-  Project data is cached with `lru_cache` — restart the server after changing data files.
+- `app/main.py` — FastAPI app, middleware, static frontend at `/static`, `/` serves `web/index.html`.
+- `app/api/projects.py` — projects from the database, all behind sign-in: `GET /api/projects` (the user's projects,
+  totals from the latest saved run), `POST /api/projects` (name, client, city, buildings → floors; creator is owner),
+  `GET /api/projects/{pid}` (meta, role, ready, buildings, assumptions, issues, model, beams_input),
+  `POST /api/projects/{pid}/calculate {overrides}` (engine + notebook comparison + auto issues; 409 until a floor is
+  measured), `GET /drawings/{pid}/{name}.svg`. Drawings and `model.json` are still read from `app/data/<slug>/`
+  until uploads store them (M1); `model.json` is cached — restart after changing it.
+- `app/api/compare.py` — notebook comparison and automatic issues.
 - `app/data/<project>/` — `project.json` (meta, sheets, per-sheet beam hotspots in PDF points),
   `inputs.json` (assumptions, beams, bars, chajja, slab openings), `issues.json`, `notebook.json` (site QS
   takeoff), `model.json` (3D: beam centrelines, columns, slab outline, metres), `drawings/*.svg` (sheets rendered
@@ -40,15 +44,18 @@ Product rules (non-negotiable):
   `app/db/migrations/` (Alembic; `alembic upgrade head`), `app/services/inputs_builder.py` (DB rows → the engine's
   `inputs` dict, so the engine stays unchanged), `tools/import_pilot.py` (loads `app/data/<slug>` into the DB).
   Until members/bars tables exist (M2–M3), a floor's beams/chajja/slab sit in `floors.structure_json`.
-  The pilot API does not read the DB yet. Plan: `docs/plans/upload-pipeline-implementation.md`.
+  Re-run `python -m tools.import_pilot worklounge --replace` after changing the pilot's data files. Plan: `docs/plans/upload-pipeline-implementation.md`.
 - Auth (M0): `app/auth/` — magic link (`POST /api/auth/link` → email → `GET /auth/callback` page → `POST
   /auth/verify` sets the `takeoff_session` cookie), DB-backed sessions (only token hashes stored), `GET /api/me`,
   `POST /api/auth/logout`. Use `Depends(project_role('viewer'|'editor'|'owner'))` on every `/api/projects/{pid}/…`
   route that reads the DB; non-members get 404. Beta is invite-only (`SIGNUP_ALLOWLIST`, `tools/users.py`).
   Cross-site writes are refused by an Origin check in `app/main.py`. Email: `MAIL_BACKEND=console|smtp`.
 
-Hash routes: `#overview`, `#model[/B47]`, `#drawings/<sheet>[/<beam>|/@x,y,zoom]`, `#beams`, `#beam/<name>`,
-`#slab`, `#issues`, `#notebook`, `#assumptions`, `#upload`.
+Hash routes: `#signin[/expired]`, `#projects`, `#new`, and per project `#p/<slug>/<view>` where view is `overview`,
+`model[/B47]`, `drawings/<sheet>[/<beam>|/@x,y,zoom]`, `beams`, `beam/<name>`, `slab`, `issues`, `notebook`,
+`assumptions`, `upload`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
+in-project links with the `P` prefix (`href="${P}beams"`). A project with no measured floor shows only Overview
+(buildings and floors) and Add drawings.
 
 ## Run / test
 ```

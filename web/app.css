@@ -235,3 +235,40 @@ ol.flow{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;ma
 .m3bar .steps .v{display:block;text-align:right}
 @media (max-width:1100px){.m3{grid-template-columns:minmax(0,1fr)}.m3side{max-height:none}}
 @media (max-width:760px){.m3wrap{height:62vh}}
+
+/* projects, sign-in and new project */
+[hidden]{display:none!important}
+.between{justify-content:space-between}
+.grow{flex:1 1 220px}
+body[data-mode="bare"] .shell{grid-template-columns:minmax(0,1fr)}
+body[data-mode="bare"] .side{display:none}
+.auth{max-width:420px;margin:8vh auto 0;width:100%}
+.auth h1{margin-top:6px}
+.auth .brand{padding:0}
+.note{padding:10px 12px;border-radius:8px;background:var(--sunk);font-size:13.5px;line-height:1.45}
+.note.ok{background:var(--ok-soft);color:var(--ok)}
+.note.warn{background:var(--warn-soft);color:var(--warn)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;text-decoration:none;color:inherit}
+.card:hover{border-color:var(--line2);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card .nums{gap:14px;font-size:13px;color:var(--fg2)}
+.card .nums b{font-family:var(--mono);color:var(--fg)}
+.proj a{display:block;margin-bottom:6px;color:var(--muted);text-decoration:none}
+.side-foot hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.side-foot div{overflow-wrap:anywhere;color:var(--fg2)}
+button.link{background:none;border:0;padding:0;color:var(--accent-ink);cursor:pointer;text-decoration:underline;font-size:12px}
+fieldset.bld{margin:0;min-width:0}
+table.floors td{padding:5px 6px;vertical-align:middle}
+table.floors input.f{width:100%;min-width:90px}
+table.floors input.num{max-width:140px}
+label.stack{gap:4px}
+label.stack>input.f{width:100%}
+.nowrap{white-space:nowrap}
+@media (max-width:760px){
+  .shell{grid-template-rows:auto 1fr}
+  body:not([data-mode="project"]) nav{display:none}
+  .side-foot{display:block;margin:0 0 0 auto;order:2}
+  .side-foot .pmeta,.side-foot .acct div{display:none}
+  .side{flex-wrap:wrap}
+  nav{order:3}
+}

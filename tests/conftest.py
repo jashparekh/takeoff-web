@@ -5,11 +5,19 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import re
+
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.auth import core, mail
+from app.db.session import get_db
+from app.main import app
+from app.settings import get_settings
 
 ROOT = Path(__file__).parents[1]
 URL = os.environ.get('TEST_DATABASE_URL')
@@ -44,3 +52,28 @@ def session(db_engine):
         finally:
             s.close()
             tx.rollback()
+
+
+@pytest.fixture
+def client(session, monkeypatch):
+    monkeypatch.setenv('COOKIE_SECURE', 'false')
+    monkeypatch.setenv('SIGNUP_ALLOWLIST', 'new@example.com,@firm.in')
+    monkeypatch.setenv('MAIL_BACKEND', 'console')
+    get_settings.cache_clear()
+    mail.outbox.clear()
+    app.dependency_overrides[get_db] = lambda: session
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+def link_token() -> str:
+    body = mail.outbox[-1].get_content()
+    return re.search(r'token=([\w\-%]+)', body).group(1)
+
+
+def sign_in(client, email: str) -> None:
+    assert client.post('/api/auth/link', json=dict(email=email)).status_code == 202
+    r = client.post('/auth/verify', data=dict(token=link_token()), follow_redirects=False)
+    assert r.status_code == 303 and r.headers['location'] == '/'
+    assert core.COOKIE in client.cookies
