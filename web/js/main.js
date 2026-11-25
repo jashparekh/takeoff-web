@@ -48,12 +48,12 @@ function index() {
 }
 
 function route() {
-  S.viewers.forEach(v => v.destroy()); S.viewers = [];
+  S.viewers.forEach(v => v.destroy()); S.viewers = []; if (S.m3d) { S.m3d.destroy(); S.m3d = null; }
   const [v, ...rest] = (location.hash.slice(1) || 'overview').split('/').map(decodeURIComponent);
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview, drawings, beams, beam, slab, issues, notebook, assumptions, upload };
+  const views = { overview, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload };
   (views[v] || overview)(...rest);
-  main.focus({ preventScroll: true }); window.scrollTo(0, 0);
+  if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
 
 /* ---------- shared bits ---------- */
@@ -71,7 +71,7 @@ function kpis() {
 const header = (title, sub, right = '') => `<div class="ph"><div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div><div class="row">${right}</div></div>`;
 const sevChip = s => `<span class="chip ${s}">${{ high: 'High', medium: 'Medium', low: 'Low' }[s]}</span>`;
 function steps(list) {
-  return `<div class="steps">${list.map(s => `<span class="l">${esc(s.label)}</span><span class="fm">${esc(s.formula)}</span><span class="wk">= ${esc(s.working)}</span><span class="v">${fx(s.value, s.unit === 'm³' || s.unit === 'm' ? 2 : s.unit === 'kg' ? 1 : 0)} ${esc(s.unit)}</span>`).join('')}</div>`;
+  return `<div class="steps">${list.map(s => `<span class="l">${esc(s.label)}</span><span class="fm">${esc(s.formula)}</span><span class="wk">= ${esc(s.working)}</span><span class="v">${fx(s.value, s.unit === 'm³' || s.unit === 'm' ? 2 : s.unit === 'kg' ? 2 : 0)} ${esc(s.unit)}</span>`).join('')}</div>`;
 }
 function mount(el, sheetId, opts = {}) {
   const sh = S.sheets[sheetId];
@@ -165,6 +165,97 @@ function drawings(sheetId = 'layout', target) {
     if (target && target.startsWith('@')) { const [x, y, z] = target.slice(1).split(',').map(Number); v.focus(x, y, z || 3); }
     else if (target && sh.hotspots[target]) { const h = sh.hotspots[target]; v.focus(h.x, h.y, 4); pick(target); }
   });
+}
+
+/* ---------- 3D model ---------- */
+const M3MODES = { type: 'Element', steel: 'Steel per metre', site: 'Site check', issues: 'Issues' };
+const M3LEG = {
+  type: `<span><i style="background:var(--b-top)"></i>beam</span><span><i style="background:var(--slab)"></i>slab (measured)</span><span><i style="background:var(--col)"></i>column</span><span><i style="background:var(--muted);opacity:.35"></i>other floors, not measured</span>`,
+  steel: LEG.steel, site: LEG.site, issues: LEG.issues,
+};
+async function model(target) {
+  const md = S.project.model;
+  if (!md) { main.innerHTML = header('3D model', 'No framing model for this project yet.'); return; }
+  const mode = store.get('m3mode', 'type');
+  const ghosts = store.get('m3ghost', true), showSlab = store.get('m3slab', true);
+  main.innerHTML = header('3D model', `Second floor slab and beams in 3D, from ${esc(md.source)}. Drag to turn, scroll or pinch to zoom, right-drag or two fingers to move. Double-click to zoom to a member.`,
+    `<input class="f" id="m3q" placeholder="Go to beam, e.g. B47" aria-label="Go to beam" style="width:170px">`) + `
+  <div class="row">
+    <div class="seg" id="m3modes">${Object.entries(M3MODES).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="seg"><button data-v="home">3D</button><button data-v="top">Top</button><button data-v="below">From below</button></div>
+    <label class="row small" style="gap:6px"><input type="checkbox" id="m3slab" ${showSlab ? 'checked' : ''}>Slab</label>
+    <label class="row small" style="gap:6px"><input type="checkbox" id="m3ghost" ${ghosts ? 'checked' : ''}>Other floors</label>
+  </div>
+  <div class="dside m3">
+    <div class="m3wrap"><div id="m3" class="m3canvas"></div>
+      <div class="viewer-tools"><button data-z="in" aria-label="Zoom in">+</button><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" aria-label="Reset view">⤢</button></div>
+      <div class="legend m3leg" id="m3leg">${M3LEG[mode]}</div>
+      <div class="m3tip" id="m3tip" hidden></div>
+    </div>
+    <aside class="panel m3side" id="m3pick"><div class="pad stack small">
+      <p class="muted">Click a beam, the slab or a column to see how its quantities were worked out.</p>
+      <div class="row"><span class="sp">Beams placed in 3D</span><b class="mono">${new Set(md.beams.map(b => b.name.split('-')[0])).size} of ${S.members.length}</b></div>
+      ${md.unplaced.length ? `<p class="muted">Not placed (label not matched on the layout): ${md.unplaced.map(n => `<a href="#beam/${n.split('-')[0]}">${n}</a>`).join(', ')}. Their steel is still counted.</p>` : ''}
+      <p class="muted">Floor-to-floor height is taken as 3.0 m for the picture. Only the second floor is measured; the other floors repeat its outline faintly for context.</p>
+    </div></aside>
+  </div>`;
+  const { Model3D } = await import('./model3d.js');
+  if (location.hash.split('/')[0] !== '#model') return;
+  const m3 = S.m3d = new Model3D($('#m3'), {
+    model: md, calc: S.calc, onPick: sel => m3panel(sel),
+    onHover: (h, e) => {
+      const tip = $('#m3tip'); if (!tip) return;
+      if (!h || h.kind === 'ghost') { tip.hidden = true; return; }
+      const r = $('#m3').getBoundingClientRect();
+      tip.textContent = h.kind === 'beam' ? `${h.part} · ${fx(S.byName[h.id]?.kg, 1)} kg` : h.kind === 'slab' ? `Slab · ${fx(S.calc.slab.kg)} kg steel` : `Column ${h.id}`;
+      tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 10) + 'px'; tip.hidden = false;
+    },
+  });
+  const recolor = mm => m3.colorBeams((n, mesh) => mm === 'type' ? (mesh.userData.cant ? '#9A3412' : getComputedStyle(document.documentElement).getPropertyValue('--b-top').trim()) : colorFor(mm, n));
+  recolor(mode); m3.show('ghost', ghosts); m3.show('slab', showSlab);
+  $('#m3modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; store.set('m3mode', b.dataset.m); document.querySelectorAll('#m3modes button').forEach(x => x.classList.toggle('on', x === b)); $('#m3leg').innerHTML = M3LEG[b.dataset.m]; recolor(b.dataset.m); });
+  main.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => m3.view(b.dataset.v)));
+  main.querySelectorAll('.viewer-tools button').forEach(b => b.addEventListener('click', () => b.dataset.z === 'fit' ? m3.home() : m3.zoom(b.dataset.z === 'in' ? 0.7 : 1.4)));
+  $('#m3slab').addEventListener('change', e => { store.set('m3slab', e.target.checked); m3.show('slab', e.target.checked); });
+  $('#m3ghost').addEventListener('change', e => { store.set('m3ghost', e.target.checked); m3.show('ghost', e.target.checked); });
+  const go = n => { n = n.trim().toUpperCase(); if (!m3.beamMeshes[n]) { toast(S.byName[n] ? `${n} is not placed in 3D yet` : `No beam ${n}`); return; } const sel = { kind: 'beam', id: n }; m3.select(sel); m3.focus(sel); m3panel(sel); };
+  $('#m3q').addEventListener('keydown', e => { if (e.key === 'Enter') go(e.target.value); });
+  if (target) go(target);
+}
+function m3panel(sel) {
+  const el = $('#m3pick'); if (!el) return;
+  if (!sel) return;
+  if (sel.kind === 'beam') {
+    const m = S.byName[sel.id]; const r = S.site[sel.id], iss = S.issueBeams[sel.id] || [];
+    history.replaceState(null, '', `#model/${sel.id}`);
+    el.innerHTML = `<div class="hd"><h2>Beam ${m.name}</h2><a class="btn sm pri" href="#beam/${m.name}">Full detail</a></div><div class="pad stack small">
+      <div class="row"><span class="sp muted">Size · clear span</span><span class="mono">${m.size}″ · ${fx(m.span_in * 25.4)} mm</span></div>
+      <div class="row"><span class="sp">Steel</span><b class="mono">${fx(m.kg, 2)} kg</b></div>
+      ${m.partsData.map(p => `<div class="m3part"><div class="row"><b>${esc(p.name)}</b><span class="muted">${p.kind === 'C' ? 'cantilever' : 'span'}</span><span class="sp"></span><span class="mono">${fx(p.kg, 2)} kg</span></div>
+        ${marks(p).map(x => `<details class="m3bar"><summary><span class="swatch" style="background:var(--b-${{ 'r-top': 'top', 'r-bot': 'bot', 'r-ext': 'ext', 'r-xtop': 'xtop', 'r-stir': 'stir' }[ROLE[x.role].c]})"></span><span class="mono">${x.mark}</span> ${x.nos} × ${x.dia}φ ${esc(ROLE[x.role].short)}<span class="sp"></span><span class="mono">${fx(x.kg, 2)} kg</span></summary>
+          <p class="why">${esc(x.why)}</p>${steps(x.steps)}</details>`).join('')}
+        <details class="m3bar"><summary>Concrete below slab<span class="sp"></span><span class="mono">${fx(p.concrete.value, 3)} m³</span></summary>${steps([p.concrete])}</details></div>`).join('')}
+      ${r ? `<div class="row"><span class="sp muted">Site notebook (${esc(r.label)})</span><span class="mono ${r.diff_kg > 0 ? 'up' : 'dn'}">${fx(r.theirs_kg)} vs ${fx(r.ours_kg)} kg</span></div>` : ''}
+      ${iss.map(i => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${sevChip(i.severity)}<span>${esc(i.title)}</span></div>`).join('')}
+      <a class="small" href="#drawings/layout/${m.name}">Show on drawing</a></div>`;
+  } else if (sel.kind === 'slab') {
+    const sl = S.calc.slab, a = S.calc.assumptions;
+    el.innerHTML = `<div class="hd"><h2>Second floor slab</h2><a class="btn sm pri" href="#slab">Full detail</a></div><div class="pad stack small">
+      <div class="row"><span class="sp muted">Thickness</span><span class="mono">${a.slab_t_in}″ (${fx(a.slab_t_in * 25.4)} mm)</span></div>
+      <div class="row"><span class="sp">Steel</span><b class="mono">${fx(sl.kg, 1)} kg</b></div>
+      <div class="row"><span class="sp">Concrete</span><b class="mono">${fx(sl.concrete_m3, 2)} m³</b></div>
+      ${sl.steps.map(s => `<details class="m3bar"><summary>${esc(s.label)}<span class="sp"></span><span class="mono">${fx(s.value, s.unit === 'kg' ? 1 : 2)} ${esc(s.unit)}</span></summary>${steps([s])}</details>`).join('')}
+      <p class="muted">The 3D footprint is traced from the beam layout (${fx(S.project.model.slab.footprint_sqft)} sq ft inside the beam edges); the estimate uses the measured ${fx(a.floor_sqft)} sq ft outline less openings.</p></div>`;
+  } else if (sel.kind === 'column') {
+    const c = S.project.model.columns;
+    el.innerHTML = `<div class="hd"><h2>Column ${esc(sel.id)}</h2></div><div class="pad stack small">
+      <p>Columns are outside this estimate, which covers the second floor slab and beams only.</p>
+      <div class="row"><span class="sp muted">Columns on the layout</span><span class="mono">${c.length}</span></div>
+      <div class="row"><span class="sp muted">Size as drawn</span><span class="mono">9″ × 24″ (229 × 610)</span></div>
+      <p class="muted">Add the column schedule to take off column steel and concrete.</p></div>`;
+  } else if (sel.kind === 'ghost') {
+    el.innerHTML = `<div class="hd"><h2>Floor ${sel.level ?? ''}</h2></div><div class="pad small stack"><p>Not measured. Only the second floor structural drawings have been received; this outline repeats the second floor for context.</p><a href="#upload">Add drawings for other floors</a></div>`;
+  }
 }
 
 /* ---------- beams table ---------- */

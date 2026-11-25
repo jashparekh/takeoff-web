@@ -27,7 +27,7 @@ def load(pid: str) -> dict:
     if not (d / 'project.json').exists():
         raise HTTPException(404, 'Project not found')
     rd = lambda n: json.loads((d / n).read_text()) if (d / n).exists() else None
-    return dict(meta=rd('project.json'), inputs=rd('inputs.json'), issues=rd('issues.json') or [], notebook=rd('notebook.json'))
+    return dict(meta=rd('project.json'), inputs=rd('inputs.json'), issues=rd('issues.json') or [], notebook=rd('notebook.json'), model=rd('model.json'))
 
 
 def projects() -> list[str]:
@@ -115,7 +115,7 @@ def list_projects():
 @app.get('/api/projects/{pid}')
 def get_project(pid: str):
     p = load(pid)
-    return dict(meta=p['meta'], assumptions=p['inputs']['assumptions'], issues=p['issues'],
+    return dict(meta=p['meta'], assumptions=p['inputs']['assumptions'], issues=p['issues'], model=p['model'],
                 beams_input=p['inputs']['beams'])
 
 

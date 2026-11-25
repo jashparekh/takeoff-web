@@ -213,3 +213,25 @@ ol.flow{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;ma
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 .bd .row{flex-wrap:nowrap}.bd .row>svg{flex:0 1 520px;min-width:0}
+/* 3D model */
+.m3{grid-template-columns:minmax(0,1fr) 340px}
+.m3wrap{position:relative;height:calc(100vh - 230px);min-height:440px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--sunk)}
+.m3canvas,.m3canvas canvas{width:100%;height:100%;display:block;touch-action:none}
+.viewer-tools{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px;z-index:2}
+.viewer-tools button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;font-size:17px;line-height:1}
+.m3leg{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap;z-index:2}
+.m3leg span{display:inline-flex;align-items:center;gap:5px}.m3leg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.m3tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--panel);font:500 12px var(--mono);padding:4px 8px;border-radius:6px;z-index:3;white-space:nowrap}
+.m3side{max-height:calc(100vh - 230px);overflow:auto;align-self:start}
+.m3part{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.m3bar summary{display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0;list-style:none}
+.m3bar summary::-webkit-details-marker{display:none}
+.m3bar summary::before{content:"▸";color:var(--muted);width:10px;transition:transform .15s}
+.m3bar[open] summary::before{transform:rotate(90deg)}
+.m3bar[open]{background:var(--sunk);border-radius:6px;padding:4px 8px 8px}
+.m3bar .steps{display:block;font-size:12px}
+.m3bar .steps .l{display:block;margin-top:6px;font-weight:600;color:var(--fg2)}
+.m3bar .steps .fm,.m3bar .steps .wk{display:block;word-break:break-word}
+.m3bar .steps .v{display:block;text-align:right}
+@media (max-width:1100px){.m3{grid-template-columns:minmax(0,1fr)}.m3side{max-height:none}}
+@media (max-width:760px){.m3wrap{height:62vh}}

@@ -37,3 +37,12 @@ def test_api():
     assert c.get('/').status_code == 200
     assert c.get('/drawings/worklounge/layout.svg').status_code == 200
     assert c.get('/drawings/worklounge/../inputs.json').status_code == 404
+
+
+def test_model_links_to_beams():
+    c = TestClient(app)
+    p = c.get('/api/projects/worklounge').json()
+    names = {b['name'] for b in p['beams_input']}
+    m = p['model']
+    assert len(m['beams']) >= 100 and all(b['name'] in names for b in m['beams'])
+    assert len(m['slab']['outline']) > 10 and len(m['columns']) >= 20

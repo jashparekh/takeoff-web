@@ -5,6 +5,7 @@ Web app for checking structural drawings and the steel, concrete and cement take
 Pilot project loaded: **Work Lounge, Hubballi**, second floor slab + beams (Manohar Consultants, R0 16.09.2026).
 
 ## Views
+- **3D model**: the measured floor's beams, slab and columns in 3D (zoom, orbit, pan, top/below presets), other floors ghosted. Click any member to see its quantities and the working; colour by element, steel per metre, site check or issues.
 - **Overview**: steel by bar size, concrete and cement, cost per sq ft, open questions.
 - **Drawings**: the consultant's sheets at full resolution with every beam clickable, coloured by steel per metre, site-check difference or issues.
 - **Beams / beam detail**: generated elevation and sections, bar bending schedule; expand any bar to see its formula with numbers filled in.
@@ -26,6 +27,8 @@ python -m pytest -q tests
 - `app/data/<project>/`: `project.json` (sheets, hotspots), `inputs.json` (beams, bars, assumptions), `issues.json`, `notebook.json`, `drawings/*.svg`.
 - `web/`: no-build frontend (ES modules).
 - `tools/import_workbook.py`: imports the pilot workbook inputs.
+- `tools/extract_model.py`: builds `model.json` (beam centrelines, columns, slab outline) from the beam layout PDF vectors (needs pymupdf, scipy, opencv).
+- `web/vendor/`: three.js r160 (MIT) with OrbitControls.
 
 ## Deploy
 DigitalOcean App Platform, spec in `.do/app.yaml` (Dockerfile build, deploys on push to `main`).
