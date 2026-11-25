@@ -64,6 +64,11 @@ async def render(ctx, sheet_id: str):
 
 async def classify(ctx, sheet_id: str):
     await run(ctx, stages.classify, sheet_id)
+    await ctx['redis'].enqueue_job('calibrate', sheet_id, _job_id=f'calibrate:{sheet_id}')
+
+
+async def calibrate(ctx, sheet_id: str):
+    await run(ctx, stages.calibrate, sheet_id)
 
 
 def stale_work(db, at) -> tuple[list, list]:
@@ -73,23 +78,29 @@ def stale_work(db, at) -> tuple[list, list]:
     ups = set(db.scalars(select(Upload.id).where(Upload.status == 'queued', Upload.created_at < cutoff)))
     shs = set(db.scalars(select(Sheet.id).where(Sheet.status == 'queued', Sheet.created_at < cutoff)))
     unread = set(db.scalars(select(Sheet.id).where(Sheet.classify_status.is_(None), Sheet.created_at < cutoff)))
+    # Type known but scale not looked at: new sheets, or a person just changed the type.
+    unscaled = set(db.scalars(select(Sheet.id).where(Sheet.sheet_type.is_not(None), Sheet.scale_status.is_(None))))
     for j in db.scalars(select(Job).where(Job.status == 'running', Job.started_at < dead)):
-        {'ingest': ups, 'render': shs, 'classify': unread}[j.stage].add(j.upload_id if j.stage == 'ingest' else j.sheet_id)
-    return sorted(ups, key=str), sorted(shs, key=str), sorted(unread, key=str)
+        {'ingest': ups, 'render': shs, 'classify': unread, 'calibrate': unscaled}[j.stage].add(
+            j.upload_id if j.stage == 'ingest' else j.sheet_id)
+    return sorted(ups, key=str), sorted(shs, key=str), sorted(unread, key=str), sorted(unscaled, key=str)
 
 
 async def requeue_stale(ctx):
     """Safety net, every minute. arq job ids make this a no-op for jobs still waiting in Redis."""
     with session_factory()() as db:
-        ups, shs, unread = stale_work(db, stages.now())
+        ups, shs, unread, unscaled = stale_work(db, stages.now())
     for u in ups:
         await ctx['redis'].enqueue_job('ingest', str(u), _job_id=f'ingest:{u}')
     for s in shs:
         await ctx['redis'].enqueue_job('render', str(s), _job_id=f'render:{s}')
     for s in unread:
         await ctx['redis'].enqueue_job('classify', str(s), _job_id=f'classify:{s}')
-    if ups or shs or unread:
-        log.info('requeued %d uploads, %d sheets to draw, %d to read', len(ups), len(shs), len(unread))
+    for s in unscaled:
+        await ctx['redis'].enqueue_job('calibrate', str(s), _job_id=f'calibrate:{s}')
+    if ups or shs or unread or unscaled:
+        log.info('requeued %d uploads; sheets: %d to draw, %d to read, %d to scale', len(ups), len(shs), len(unread),
+                 len(unscaled))
 
 
 async def startup(ctx):
@@ -102,7 +113,7 @@ async def startup(ctx):
 
 
 class WorkerSettings:
-    functions = [ingest, render, classify]
+    functions = [ingest, render, classify, calibrate]
     cron_jobs = [cron(requeue_stale, second=0)]            # every minute
     on_startup = startup
     max_tries = MAX_TRIES

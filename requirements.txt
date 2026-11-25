@@ -11,3 +11,5 @@ pillow==13.0.0
 boto3==1.44.11
 arq==0.28.0
 redis==5.3.1
+numpy==2.5.5
+pytesseract==0.3.13

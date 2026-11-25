@@ -179,7 +179,7 @@ def test_sweep_finds_work_a_dead_worker_left(client, session, proj, storage, que
     post(client, ('sched.pdf', SCHED1))
     a, b = queued
     t = stages.now()
-    assert stale_work(session, t) == ([], [], [])                           # just queued: the queue has them
+    assert stale_work(session, t) == ([], [], [], [])                           # just queued: the queue has them
     later = t + timedelta(minutes=3)
     assert set(stale_work(session, later)[0]) == {a, b}                     # never picked up
     with pytest.raises(RuntimeError):
@@ -192,8 +192,8 @@ def test_sweep_finds_work_a_dead_worker_left(client, session, proj, storage, que
     session.get(Upload, a).status = 'processing'
     session.get(Upload, b).status = 'done'
     session.commit()
-    assert stale_work(session, t + timedelta(seconds=60)) == ([], [], [])   # still within the time a job may take
-    assert stale_work(session, t + timedelta(seconds=JOB_TIMEOUT + 61)) == ([a], [], [])
+    assert stale_work(session, t + timedelta(seconds=60)) == ([], [], [], [])   # still within the time a job may take
+    assert stale_work(session, t + timedelta(seconds=JOB_TIMEOUT + 61)) == ([a], [], [], [])
 
 
 SCHED2 = (SRC / '260919_SF_BEAM SCHEDULE -02.pdf').read_bytes()
@@ -241,7 +241,7 @@ def test_unclear_sheet_needs_review_and_a_person_can_fix_it(client, session, pro
     stages.classify(session, storage, sid)
     s = client.get('/api/projects/site-b/sheets').json()[0]
     assert s['classify_status'] == 'needs_review'
-    assert s['classify_note'] == 'This sheet has no readable text, so its title block could not be read.'
+    assert s['classify_note'] == 'No text could be read on this sheet, so its title block could not be read.'
     assert s['sheet_type'] is None and s['floor_id'] is None
 
     third = str(floors['Third floor'].id)

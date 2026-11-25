@@ -2,8 +2,8 @@
 work was done, so running a stage again (a retry, a duplicate queue message, a re-upload) does nothing new.
 
 These are plain functions taking a session and storage, so tests run them without Redis; `jobs.py` wraps them
-for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) and classify(sheet) for each new page.
-Calibrate comes next (plan M1 step 7), then layout / schedule / slab by sheet type (M2–M5).
+for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) and classify(sheet) for each new page →
+calibrate(sheet) once its type is known. Then layout / schedule / slab by sheet type (M2–M5).
 """
 from __future__ import annotations
 import hashlib
@@ -19,10 +19,14 @@ from sqlalchemy.orm import Session
 from ..db.models import Building, Floor, Job, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
-from . import classify as cls
-from . import pdf
+import numpy as np
 
-CLASSIFY_VERSION = 1             # bump when the title-block reader changes, so sheets are read again
+from . import calibrate as cal
+from . import classify as cls
+from . import ocr, pdf
+
+CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
+CALIBRATE_VERSION = 1
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -155,11 +159,14 @@ def classify(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
         with job(db, 'classify', s.id, f'{s.page_hash}:v{CLASSIFY_VERSION}:{sig}', s.project_id, final=final,
                  sheet_id=s.id):
             with fetch(storage, s.upload.storage_key) as f:
-                lines = pdf.text_lines(f.name, s.page_no)
-            r = cls.classify(lines, floors, s.upload.filename)
+                lines, source = pdf.text_lines(f.name, s.page_no), 'pdf'
+                if not cls.title_block_lines(lines):
+                    lines, source = ocr_title_block(f.name, s.page_no), 'ocr'
+            r = cls.classify(lines, floors, s.upload.filename, ocr=source == 'ocr')
             db.refresh(s)
             if s.classify_status == 'confirmed':          # a person confirmed it while we were reading
                 return
+            s.text_source = source if lines else None
             tb = r.title_block
             s.drg_no, s.title, s.revision, s.scale_text, s.drawn_on = tb.drg_no, tb.title, tb.revision, tb.scale, tb.date
             s.sheet_type, s.floor_id = r.sheet_type, r.floor_id
@@ -173,3 +180,68 @@ def classify(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
                 s.classify_status, s.classify_note = 'needs_review', 'The title block could not be read. Pick the type and floor.'
                 db.commit()
         raise
+
+
+def ocr_title_block(path: str, page_no: int) -> list:
+    """No title block in the text layer (a scan, or text drawn as outlines): OCR the bottom-right corner, then the
+    whole sheet if that finds no drawing number."""
+    img, _ = pdf.render_gray(path, page_no)
+    W, H = img.size
+    lines = ocr.lines(img, (int(W * 0.55), int(H * 0.55), W, H))
+    return lines if cls.title_block_lines(lines) else ocr.lines(img)
+
+
+def calibrate(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Check the scale against the sheet's dimension strings; see calibrate.py. Waits for classify (the type decides
+    whether a scale is needed). A scale a person confirmed is never changed."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.scale_status == 'confirmed' or s.sheet_type is None:
+        return
+    if s.sheet_type not in cal.NEEDS_SCALE:
+        s.scale_status, s.pt_per_in, s.scale_error, s.scale_checks, s.scale_note = 'not_needed', None, None, None, None
+        db.commit()
+        return
+    try:
+        with job(db, 'calibrate', s.id, f'{s.page_hash}:v{CALIBRATE_VERSION}:{s.scale_text}', s.project_id,
+                 final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                img, dpi = pdf.render_gray(f.name, s.page_no)
+            m = cal.measure(np.asarray(img), dpi, ocr.words(img))
+            del img
+            d = cal.decide(m, s.scale_text)
+            db.refresh(s)
+            if s.scale_status == 'confirmed':
+                return
+            s.scale_status, s.pt_per_in, s.scale_error, s.scale_checks, s.scale_note = \
+                d.status, d.pt_per_in, d.error, d.checks, d.note
+            db.flush()
+            # Sheets of the same set with nothing to measure take their scale from a measured sister sheet.
+            for other in db.scalars(select(Sheet).where(Sheet.project_id == s.project_id,
+                                                        Sheet.scale_status.in_(('unchecked', 'borrowed')))):
+                borrow(db, other)
+    except Skip:
+        return
+    except Exception:
+        if final:
+            s = db.get(Sheet, sheet_id)
+            if s.scale_status != 'confirmed':
+                s.scale_status, s.scale_note = 'unchecked', 'The scale could not be checked. Enter it by hand.'
+                db.commit()
+        raise
+
+
+def borrow(db: Session, s: Sheet) -> None:
+    """Give an unmeasured sheet the scale of a measured sheet with the same printed scale and paper size, saying so.
+    Preference: a scale a person confirmed, then one that matched its printed scale, then the beam layout."""
+    donors = [d for d in db.scalars(select(Sheet).where(
+        Sheet.project_id == s.project_id, Sheet.id != s.id, Sheet.pt_per_in.is_not(None),
+        Sheet.scale_status.in_(('confirmed', 'ok', 'differs')), Sheet.sheet_type.in_(cal.NEEDS_SCALE)))
+        if d.scale_text == s.scale_text and abs(d.width_pt - s.width_pt) <= 1 and abs(d.height_pt - s.height_pt) <= 1]
+    if not donors:
+        return
+    rank = {'confirmed': 0, 'ok': 1, 'differs': 2}
+    d = min(donors, key=lambda d: (rank[d.scale_status], d.sheet_type != 'beam_layout', -(d.scale_checks or 0)))
+    name = d.drg_no or f'{d.upload.filename} page {d.page_no}'
+    s.scale_status, s.pt_per_in, s.scale_checks, s.scale_error = 'borrowed', d.pt_per_in, 0, None
+    s.scale_note = (f"This sheet's own dimensions could not confirm a scale; using {cal.ratio(d.pt_per_in)} from {name} "
+                    f'(same printed scale and sheet size). Confirm it is the same.')
