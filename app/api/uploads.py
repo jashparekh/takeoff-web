@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ..auth.deps import CurrentUser, Db, project_role
-from ..db.models import Building, Correction, Floor, Project, Sheet, Upload
+from ..db.models import Building, Correction, Floor, Member, Project, Sheet, Upload
 from ..pipeline.classify import COVERAGE_TYPES, TYPE_LABELS
 from ..settings import get_settings
 from ..storage import Storage, get_storage, upload_key
@@ -76,7 +76,7 @@ def sheet_dict(s: Sheet, slug: str) -> dict:
                 classify_status=s.classify_status, classify_note=s.classify_note, text_source=s.text_source,
                 pt_per_in=s.pt_per_in, scale_ratio=round(72 / s.pt_per_in) if s.pt_per_in else None,
                 scale_status=s.scale_status, scale_error=s.scale_error, scale_checks=s.scale_checks,
-                scale_note=s.scale_note,
+                scale_note=s.scale_note, layout_note=s.layout_note,
                 thumb_url=f'{base}/thumb.png' if ready else None,
                 image_url=f'{base}/display.png' if ready else None)
 
@@ -175,8 +175,10 @@ def correct_sheet(p: Editor, sheet_id: str, req: SheetPatch, user: CurrentUser, 
         if name in sent and getattr(s, name) != getattr(req, name):
             record(name, getattr(s, name), getattr(req, name))
             setattr(s, name, getattr(req, name))
-            if name == 'sheet_type' and s.scale_status != 'confirmed':
-                s.scale_status = None          # the worker checks the scale again for the new type
+            if name == 'sheet_type':
+                s.layout_version = None        # read the layout again (or drop it) for the new type
+                if s.scale_status != 'confirmed':
+                    s.scale_status = None      # the worker checks the scale again for the new type
     if req.confirm and sent & {'sheet_type', 'floor_id', 'confirm'}:
         s.classify_status, s.classify_note = 'confirmed', None
     if req.scale_ratio is not None or req.accept_scale:
@@ -187,7 +189,7 @@ def correct_sheet(p: Editor, sheet_id: str, req: SheetPatch, user: CurrentUser, 
         else:
             raise HTTPException(422, 'There is no scale to accept; enter it as 1:N.')
         record('scale', f'1:{round(72 / s.pt_per_in)}' if s.pt_per_in else None, f'1:{round(72 / new)}')
-        s.pt_per_in, s.scale_status = new, 'confirmed'
+        s.pt_per_in, s.scale_status, s.layout_version = new, 'confirmed', None
         s.scale_note = f'Scale 1:{round(72 / new)} confirmed by {user.name or user.email}.'
         db.flush()
         from ..pipeline.stages import borrow             # sister sheets with no dimensions follow a confirmed scale
@@ -195,6 +197,23 @@ def correct_sheet(p: Editor, sheet_id: str, req: SheetPatch, user: CurrentUser, 
             borrow(db, other)
     db.flush()
     return dict(sheet_dict(s, p.slug), filename=s.upload.filename)
+
+
+def member_dict(m: Member, pt_per_in: float | None) -> dict:
+    length_pt = abs(m.x2 - m.x1) + abs(m.y2 - m.y1) if m.kind == 'beam' else None
+    return dict(id=str(m.id), kind=m.kind, name=m.name, vertical=m.vertical, x1=m.x1, y1=m.y1, x2=m.x2, y2=m.y2,
+                b_in=m.b_in, label_b_in=m.label_b_in, label_d_in=m.label_d_in, label_box=m.label_box,
+                length_in=round(length_pt / pt_per_in, 1) if length_pt and pt_per_in else None,
+                confidence=m.confidence, status=m.status, note=m.note,
+                placed=m.kind != 'beam' or (m.x1, m.y1) != (m.x2, m.y2))
+
+
+@router.get('/api/projects/{pid}/sheets/{sheet_id}/members')
+def sheet_members(p: Viewer, sheet_id: str, db: Db):
+    """Beams and columns read off a layout sheet, in the sheet's PDF points (origin top-left)."""
+    s = own_sheet(db, p, sheet_id)
+    ms = db.scalars(select(Member).where(Member.sheet_id == s.id).order_by(Member.kind, Member.name)).all()
+    return [member_dict(m, s.pt_per_in) for m in ms]
 
 
 @router.get('/api/projects/{pid}/sheets/{sheet_id}/{name}')

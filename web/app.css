@@ -294,3 +294,7 @@ table.cov a.chip{text-decoration:none}
 #placeForm{align-items:flex-end;border-bottom:1px solid var(--line)}
 #placeForm select.f{min-width:170px}
 .thumb .small.muted{min-height:1.2em}
+.viewer .overlay{position:absolute;left:0;top:0;pointer-events:none}
+.viewer .overlay line{stroke-width:2.2;stroke-linecap:round;opacity:.75;vector-effect:non-scaling-stroke}
+.viewer .overlay rect{fill:none;stroke:#2563EB;stroke-width:2;vector-effect:non-scaling-stroke}
+.sw{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}

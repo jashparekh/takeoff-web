@@ -24,6 +24,8 @@ jobs:
       - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends tesseract-ocr
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q -rs tests 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
+      - name: Layout reader on the pilot (metrics, not a gate)
+        run: python -m tools.golden_report
       - run: docker build -t takeoff-web . 2>&1 | tail -150 > build.log
       - name: Post log on failure
         if: failure() && github.event_name == 'pull_request'

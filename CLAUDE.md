@@ -43,7 +43,15 @@ Product rules (non-negotiable):
   (matches the printed scale), `differs` (pilot layout: printed 1:100, measures 1:119 — printed to fit A3), `borrowed`
   (no usable dimensions; scale of a measured sheet with the same printed scale and paper size), `unchecked`,
   `confirmed` (a person set it via `PATCH … {scale_ratio}` or `{accept_scale}`). Only `ok`/`confirmed` are settled.
-  Bump `CLASSIFY_VERSION` / `CALIBRATE_VERSION` when a reader changes. Tesseract is needed locally (`brew install
+  Then `layout` (beam layouts with a scale; `geometry.py` + `layout.py`, M2): vectors via pypdfium2 (stroke widths
+  scaled by each object's matrix); beam edges = the stroke width whose lines pair up most at 4.5–15" spacing (0.84 pt
+  on the pilot, found not hard-coded); columns = small rectangles drawn heavier than edges; labels = OCR of a render
+  holding only the lettering strokes, at 200/250/300 dpi, upright and turned (89 of 91 pilot labels). A label goes to
+  the nearest parallel strip and the span between columns or beams that cross right over it; a beam framing in from
+  one side (T) only splits a span when two labels share it. Results in `members` (sheet points); people's decisions
+  (status ≠ auto) survive re-reads. `python -m tools.golden_report` compares with the pilot (79 of 88 beams within
+  4 ft, median 0.1"; 25/25 columns); the misses mostly need schedule spans (M3).
+  Bump `CLASSIFY_VERSION` / `CALIBRATE_VERSION` / `LAYOUT_VERSION` when a reader changes. Tesseract is needed locally (`brew install
   tesseract`) and is in the Docker image; OCR tests skip without it. Every stage writes a `jobs` row keyed `stage:subject:input_hash` and does nothing if it already ran.
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
   pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
@@ -56,8 +64,8 @@ Product rules (non-negotiable):
   (pan/zoom SVG sheet viewer with hotspots), `js/beamdraw.js` (generated beam elevation + sections),
   `js/model3d.js` (three.js 3D view, lazy-loaded), `app.css` (tokens; light + dark), `vendor/` three.js r160
   (MIT; imports rewritten to relative paths).
-- `tools/import_workbook.py` — imports the pilot workbook inputs. `tools/extract_model.py` — builds
-  `model.json` from the beam layout PDF vectors (needs pymupdf, scipy, opencv-python, pillow).
+- `tools/import_workbook.py` — imports the pilot workbook inputs. `tools/extract_model.py` — the pilot's one-off
+  `model.json` builder (PyMuPDF, hand-placed labels); superseded by `app/pipeline/layout.py`, kept as the golden source.
 - `docs/` — pilot workbook and the B47 explainer PDF.
 - `tests/test_engine.py` — pins pilot totals; keep green.
 - Database (upload pipeline M0, in progress): `app/settings.py` (env / `.env`), `app/db/models.py` (SQLAlchemy),

@@ -3,7 +3,8 @@ work was done, so running a stage again (a retry, a duplicate queue message, a r
 
 These are plain functions taking a session and storage, so tests run them without Redis; `jobs.py` wraps them
 for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) and classify(sheet) for each new page →
-calibrate(sheet) once its type is known. Then layout / schedule / slab by sheet type (M2–M5).
+calibrate(sheet) once its type is known → layout(sheet) for beam layouts with a scale (M2). Then schedule / slab
+by sheet type (M3–M5).
 """
 from __future__ import annotations
 import hashlib
@@ -16,17 +17,19 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..db.models import Building, Floor, Job, Sheet, Upload
+from ..db.models import Building, Floor, Job, Member, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
 import numpy as np
 
 from . import calibrate as cal
 from . import classify as cls
+from . import layout as lay
 from . import ocr, pdf
 
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
+LAYOUT_VERSION = 1
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -245,3 +248,42 @@ def borrow(db: Session, s: Sheet) -> None:
     s.scale_status, s.pt_per_in, s.scale_checks, s.scale_error = 'borrowed', d.pt_per_in, 0, None
     s.scale_note = (f"This sheet's own dimensions could not confirm a scale; using {cal.ratio(d.pt_per_in)} from {name} "
                     f'(same printed scale and sheet size). Confirm it is the same.')
+
+
+def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Read beams and columns off a beam layout sheet into `members`. Needs a scale (any status: the scale only sets
+    which line spacings count as beams; lengths use the settled scale later). Members a person decided on are
+    kept; the pipeline's own previous reading of this sheet is replaced."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.sheet_type != 'beam_layout' or not s.pt_per_in:
+        return
+    try:
+        with job(db, 'layout', s.id, f'{s.page_hash}:v{LAYOUT_VERSION}:{s.pt_per_in:.4f}', s.project_id,
+                 final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                r = lay.read_layout(f.name, s.page_no, s.pt_per_in)
+            db.refresh(s)
+            db.query(Member).filter(Member.sheet_id == s.id, Member.status == 'auto').delete()
+            kept = {m.name for m in db.scalars(select(Member).where(Member.sheet_id == s.id, Member.kind == 'beam'))}
+            for b in r.beams:
+                if b.name in kept:                       # a person already decided about this beam
+                    continue
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='beam', name=b.name,
+                              vertical=b.vertical, x1=b.p1[0], y1=b.p1[1], x2=b.p2[0], y2=b.p2[1], b_in=b.b_in,
+                              label_b_in=b.label_b_in, label_d_in=b.label_d_in, label_box=list(b.label.box),
+                              confidence=b.confidence, note=b.note))
+            for c in r.columns:
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='column',
+                              x1=c.x0, y1=c.y0, x2=c.x1, y2=c.y1,
+                              b_in=round(min(c.x1 - c.x0, c.y1 - c.y0) / s.pt_per_in, 1), confidence=0.8))
+            for u in r.unplaced:
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='beam', name=u.name,
+                              vertical=u.vertical, x1=u.x, y1=u.y, x2=u.x, y2=u.y, label_box=list(u.box),
+                              label_b_in=u.b_in, label_d_in=u.d_in, confidence=0,
+                              note='Label read, but no beam found next to it.'))
+            names = {b.name for b in r.beams}
+            s.layout_version = LAYOUT_VERSION
+            s.layout_note = (f'{len(names)} beams placed from {len(names | {u.name for u in r.unplaced})} labels read; '
+                             f'{len(r.columns)} columns.')
+    except Skip:
+        return

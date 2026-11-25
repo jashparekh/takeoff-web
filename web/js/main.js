@@ -702,7 +702,7 @@ async function refreshUploads(openSheet) {
   if (PID !== pid || S.view !== 'upload' || !$('#ups')) return;
   S.uploads = ups;
   S.upSheets = Object.fromEntries(ups.flatMap(u => u.sheets.map(s => [s.id, { ...s, filename: u.filename }])));
-  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status) || !s.classify_status || (s.sheet_type && !s.scale_status)));
+  const busy = ups.some(u => ['queued', 'processing'].includes(u.status) || u.sheets.some(s => ['queued', 'rendering'].includes(s.status) || !s.classify_status || (s.sheet_type && !s.scale_status) || (s.sheet_type === 'beam_layout' && s.pt_per_in && !s.layout_note)));
   $('#upState').textContent = busy ? 'Working… this page updates by itself' : '';
   $('#ups').innerHTML = ups.length ? ups.map(u => `<div class="upl stack">
     <div class="row between"><span><b>${esc(u.filename)}</b> <span class="small muted">${mb(u.size_bytes)}${u.pages != null ? ` · ${u.pages} page${u.pages === 1 ? '' : 's'}` : ''}${u.pages != null && u.new_sheets < u.pages ? ` · ${u.pages - u.new_sheets} already in the project` : ''}</span></span>${chip(UP_STATUS[u.status])}</div>
@@ -764,6 +764,31 @@ function scaleBlock(s, canEdit) {
   </form>`;
 }
 
+/* Members read off a beam layout, drawn over the sheet: beams by confidence, columns, and labels with no beam. */
+const confColor = c => c >= 0.7 ? '#15803D' : c >= 0.4 ? '#EA580C' : '#B42318';
+async function showMembers(vw, s) {
+  let ms;
+  try { ms = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${s.id}/members`); } catch { return; }
+  if (!S.viewers.includes(vw)) return;
+  const beams = ms.filter(m => m.kind === 'beam' && m.placed), cols = ms.filter(m => m.kind === 'column');
+  const lost = ms.filter(m => m.kind === 'beam' && !m.placed);
+  vw.setOverlay(beams.map(m => `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="${confColor(m.confidence)}"/>`).join('') +
+    cols.map(m => `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}"/>`).join(''));
+  const byId = Object.fromEntries(ms.map(m => [m.id, m]));
+  vw.setHotspots([...beams, ...lost].filter(m => m.label_box).map(m => ({
+    id: m.id, label: m.name, color: m.placed ? confColor(m.confidence) : '#B42318',
+    x: (m.label_box[0] + m.label_box[2]) / 2, y: (m.label_box[1] + m.label_box[3]) / 2 })));
+  vw.onPick = h => {
+    const m = byId[h.id]; vw.select(h.id);
+    const size = m.label_b_in ? `${m.label_b_in}"×${m.label_d_in}" (label)` : '';
+    $('#memberInfo').innerHTML = `<b>${esc(m.name)}</b> ${m.placed ? `· ${size} · drawn ${fx(m.b_in, 1)}" wide · span ${m.length_in ? `${fx(m.length_in / 12, 1)} ft` : '—'}` : '· label read, no beam found next to it'}
+      · <span style="color:${confColor(m.confidence)}">confidence ${fx(m.confidence * 100)}%</span>${m.note ? ` · ${esc(m.note)}` : ''}`;
+  };
+  const info = document.createElement('div'); info.className = 'pad small'; info.id = 'memberInfo';
+  info.innerHTML = `${esc(s.layout_note || '')} <span class="legend-inline"><span class="sw" style="background:#15803D"></span>likely <span class="sw" style="background:#EA580C"></span>check <span class="sw" style="background:#B42318"></span>doubtful or no beam found <span class="sw" style="background:#2563EB"></span>column</span> · Click a label for details. Reviewing them comes next.`;
+  $('#sheetVw').before(info);
+}
+
 function showSheet(id) {
   const s = S.upSheets?.[id], el = $('#sheetView'); if (!el) return;
   S.viewers.forEach(v => v.destroy()); S.viewers = [];
@@ -781,7 +806,9 @@ function showSheet(id) {
     </form>
     ${scaleBlock(s, canEdit)}
     <div id="sheetVw" style="height:62vh"></div>`;
-  S.viewers.push(new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url }));
+  const vw = new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url });
+  S.viewers.push(vw);
+  if (s.sheet_type === 'beam_layout') showMembers(vw, s);
   $('#closeSheet').addEventListener('click', () => { S.viewers.forEach(v => v.destroy()); S.viewers = []; el.hidden = true; history.replaceState(null, '', `${P}upload`); });
   $('#scaleForm')?.addEventListener('submit', async e => {
     e.preventDefault();

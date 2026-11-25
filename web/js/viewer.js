@@ -30,9 +30,21 @@ export class Viewer {
     this.layout();
   }
   select(id) { this.hot.forEach(h => h.node.classList.toggle('sel', h.id === id)); }
+  // Vector overlay in sheet points (e.g. members read off the sheet); scales with the image.
+  setOverlay(inner) {
+    if (!this.svg) {
+      this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      this.svg.setAttribute('class', 'overlay');
+      this.svg.setAttribute('viewBox', `0 0 ${this.W} ${this.H}`);
+      this.canvas.insertBefore(this.svg, this.img.nextSibling);
+    }
+    this.svg.innerHTML = inner;
+    this.layout();
+  }
   layout() {
     const k = this.base * this.s;
     this.img.style.width = (this.W * k) + 'px';
+    if (this.svg) { this.svg.style.width = (this.W * k) + 'px'; this.svg.style.height = (this.H * k) + 'px'; }
     this.canvas.style.transform = `translate(${this.tx}px,${this.ty}px)`;
     const r = Math.max(6, Math.min(22, 6.5 * k));
     for (const h of this.hot) {

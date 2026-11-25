@@ -23,6 +23,9 @@ JOB_STATUSES = ('queued', 'running', 'done', 'failed')
 CLASSIFY_STATUSES = ('auto', 'needs_review', 'confirmed')     # confirmed = a person set or checked it
 # ok: dimensions agree with the printed scale. differs / borrowed / unchecked: a person must look.
 SCALE_STATUSES = ('ok', 'differs', 'borrowed', 'unchecked', 'not_needed', 'confirmed')
+MEMBER_KINDS = ('beam', 'column', 'slab_panel')
+# auto: read by the pipeline, not looked at. accepted / edited / added / rejected: a person decided (Review, M2).
+MEMBER_STATUSES = ('auto', 'accepted', 'edited', 'added', 'rejected')
 
 
 class Base(DeclarativeBase):
@@ -241,6 +244,8 @@ class Sheet(Base):
     scale_error: Mapped[float | None] = mapped_column(Float)          # measured / printed − 1
     scale_checks: Mapped[int | None] = mapped_column(Integer)         # dimensions that agree with the scale in use
     scale_note: Mapped[str | None] = mapped_column(Text)
+    layout_version: Mapped[int | None] = mapped_column(Integer)       # layout reader version that produced members
+    layout_note: Mapped[str | None] = mapped_column(Text)             # summary: labels found, members placed
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
     __table_args__ = (UniqueConstraint('project_id', 'page_hash'),
@@ -278,3 +283,31 @@ class Correction(Base):
     new_value: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = created()
+
+
+class Member(Base):
+    """A structural member read off a layout sheet (or added by a person): a beam centreline, a column outline.
+    Geometry is in the sheet's PDF points (origin top-left), so it lines up with the sheet image; metres come from
+    the sheet's scale (`sheets.pt_per_in`)."""
+    __tablename__ = 'members'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'), index=True)
+    sheet_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sheets.id', ondelete='CASCADE'), index=True)
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('floors.id', ondelete='SET NULL'), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str | None] = mapped_column(String(32))                # B13, HB29, CB1 (columns: none yet)
+    vertical: Mapped[bool | None] = mapped_column(Boolean)
+    x1: Mapped[float] = mapped_column(Float)                           # beam: centreline ends; column: rectangle
+    y1: Mapped[float] = mapped_column(Float)
+    x2: Mapped[float] = mapped_column(Float)
+    y2: Mapped[float] = mapped_column(Float)
+    b_in: Mapped[float | None] = mapped_column(Float)                  # width as drawn
+    label_b_in: Mapped[float | None] = mapped_column(Float)            # size printed with the label, e.g. (9"X18")
+    label_d_in: Mapped[float | None] = mapped_column(Float)
+    label_box: Mapped[list | None] = mapped_column(Json)               # [x0, y0, x1, y1] pt: the hotspot
+    confidence: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(16), default='auto')
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created()
+    __table_args__ = (CheckConstraint(f"kind IN {MEMBER_KINDS}", name='kind_valid'),
+                      CheckConstraint(f"status IN {MEMBER_STATUSES}", name='status_valid'))
