@@ -6,6 +6,7 @@ Pilot project loaded: **Work Lounge, Hubballi**, second floor slab + beams (Mano
 
 ## Views
 - **Add drawings**: upload PDFs; each page becomes a sheet, drawn at 300 dpi and viewable as soon as the worker finishes. The same file or page is never processed twice. Each sheet's title block is read to find its type and floor; the **Coverage** grid shows floors × drawings (beam layout, beam schedule, slab bottom and top bars) and what is missing, and any sheet can be corrected in the viewer. Each layout's scale is checked against its own dimension strings; a scale that differs from the printed one (sheets printed to fit) goes to a person to confirm.
+- **Review**: go through the beams and columns read off each layout, least certain first: accept, fix the name or size, redraw a beam on the sheet, mark a misread label not on the drawing, or add a beam that was missed. Keyboard: A, E, R, X, N, P.
 - **Sign in / Projects / New project**: email sign-in link, the projects you've been added to, and a form to start a project (buildings → floors) before its drawings arrive.
 - **3D model**: the measured floor's beams, slab and columns in 3D (zoom, orbit, pan, top/below presets), other floors ghosted. Click any member to see its quantities and the working; colour by element, steel per metre, site check or issues.
 - **Overview**: steel by bar size, concrete and cement, cost per sq ft, open questions.

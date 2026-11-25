@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .api.projects import router as projects_router
+from .api.review import router as review_router
 from .api.uploads import MAX_FILES_PER_REQUEST, router as uploads_router
 from .auth.routes import router as auth_router
 from .db.session import get_engine
@@ -24,6 +25,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(uploads_router)
+app.include_router(review_router)
 UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
 

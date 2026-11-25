@@ -8,8 +8,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let PID = null, P = '#';          // current project slug, and the hash prefix for its views: #p/<slug>/
 const S = { me: undefined, project: null, calc: null, base: null, overrides: {}, viewers: [] };
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
-const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'assumptions', 'upload'];
-const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload'].includes(v)));
+const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'assumptions', 'upload', 'review'];
+const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review'].includes(v)));
 
 class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
 async function api(path, body, method = 'POST') {
@@ -87,7 +87,7 @@ async function route() {
   S.view = v;
   shell('project');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload };
+  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload, review };
   views[v](...rest);
   if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
@@ -831,5 +831,169 @@ function showSheet(id) {
   });
   el.scrollIntoView({ block: 'nearest' });
 }
+
+/* ---------- review: check what the layout reader found ---------- */
+const RV = { q: null, i: 0, mode: null, picks: [], sheetId: null, vw: null, members: {} };
+const ftIn = inch => inch == null ? '—' : `${Math.floor(inch / 12)}'-${Math.round(inch % 12)}"`;
+
+async function review(memberId) {
+  const canEdit = ['owner', 'editor'].includes(S.project.role);
+  main.innerHTML = header('Review', 'Check each beam and column the drawings were read into. Least certain first.', '<span id="rvProg" class="small muted"></span>') + `
+  <div class="progress"><i id="rvBar"></i></div>
+  <div class="grid g-main rv">
+    <section class="panel"><div id="rvVw" style="height:70vh"></div></section>
+    <section class="panel pad stack" id="rvForm"><div class="muted small">Loading…</div></section>
+  </div>`;
+  RV.vw = null; RV.sheetId = null; RV.mode = null; RV.picks = []; RV.members = {};
+  RV.q = await api(`/api/projects/${encodeURIComponent(PID)}/review`);
+  if (S.view !== 'review') return;
+  RV.canEdit = canEdit;
+  const at = memberId ? RV.q.items.findIndex(m => m.id === memberId) : 0;
+  RV.i = Math.max(0, at);
+  rvShow();
+}
+
+function rvProgress() {
+  const { total, checked } = RV.q;
+  $('#rvProg').textContent = total ? `${checked} of ${total} checked` : '';
+  $('#rvBar').style.width = total ? `${checked / total * 100}%` : '0';
+  const c = $('#reviewCount'); if (c) { c.hidden = !(total - checked); c.textContent = total - checked; }
+}
+
+async function rvShow() {
+  rvProgress();
+  const form = $('#rvForm'); if (!form) return;
+  const m = RV.q.items[RV.i];
+  if (!m) {
+    form.innerHTML = RV.q.total ? `<h2>All checked</h2><p class="small">Every member on this project's layouts has been looked at.</p>${RV.canEdit && RV.sheetId ? '<div><button class="btn" id="rvAdd">Add a beam the reader missed</button></div>' : ''}`
+      : `<h2>Nothing to review yet</h2><p class="small">Upload a beam layout on <a href="${P}upload">Add drawings</a>. Once it has been read, its beams and columns show up here.</p>`;
+    $('#rvAdd')?.addEventListener('click', () => rvStartPick('add'));
+    return;
+  }
+  history.replaceState(null, '', `${P}review/${m.id}`);
+  if (RV.sheetId !== m.sheet.id) {
+    S.viewers.forEach(v => v.destroy()); S.viewers = [];
+    RV.vw = new Viewer($('#rvVw'), { title: m.sheet.title || m.sheet.drg_no, width: m.sheet.width_pt, height: m.sheet.height_pt }, { src: m.sheet.image_url });
+    S.viewers.push(RV.vw); RV.sheetId = m.sheet.id;
+    RV.vw.onSheetClick = pt => rvPick(pt);
+    try { RV.members[m.sheet.id] = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${m.sheet.id}/members`); } catch { RV.members[m.sheet.id] = []; }
+  }
+  const box = m.label_box, cx = m.placed ? (m.x1 + m.x2) / 2 : (box ? (box[0] + box[2]) / 2 : m.x1), cy = m.placed ? (m.y1 + m.y2) / 2 : (box ? (box[1] + box[3]) / 2 : m.y1);
+  requestAnimationFrame(() => RV.vw.focus(cx, cy, 3.2));
+  rvDraw();
+  const kind = m.kind === 'column' ? 'Column' : 'Beam';
+  const dis = RV.canEdit ? '' : 'disabled';
+  form.innerHTML = `
+    <div class="row between"><h2>${kind} ${esc(m.name || '')}</h2><span class="small muted">${RV.i + 1} of ${RV.q.items.length} to check</span></div>
+    <div class="small">${esc(m.sheet.drg_no || '')} · <span style="color:${confColor(m.confidence)}">confidence ${fx(m.confidence * 100)}%</span></div>
+    ${m.note && m.placed ? `<div class="note warn small">${esc(m.note)}</div>` : ''}
+    ${!m.placed ? '<div class="note warn small">The label was read but no beam was found next to it. Redraw it on the sheet, or mark it not on the drawing.</div>' : ''}
+    <dl class="kv small">
+      ${m.kind === 'beam' ? `<dt>Drawn width</dt><dd>${m.b_in ? `${fx(m.b_in, 1)}"` : '—'}</dd><dt>Span (centre to centre)</dt><dd>${ftIn(m.length_in)}</dd><dt>Direction</dt><dd>${m.placed ? (m.vertical ? 'Vertical on sheet' : 'Horizontal on sheet') : '—'}</dd>`
+        : `<dt>Size as drawn</dt><dd>${m.sheet.pt_per_in ? `${fx((m.x2 - m.x1) / m.sheet.pt_per_in, 0)}" × ${fx((m.y2 - m.y1) / m.sheet.pt_per_in, 0)}"` : '—'}</dd>`}
+    </dl>
+    ${m.kind === 'beam' ? `<form id="rvEdit" class="stack small">
+      <label class="stack">Name<input class="f" name="name" value="${esc(m.name || '')}" ${dis} autocomplete="off"></label>
+      <div class="row"><label class="stack grow">Width b (in)<input class="f num" name="b" type="number" step="0.5" value="${m.label_b_in ?? ''}" ${dis}></label>
+        <label class="stack grow">Depth D (in)<input class="f num" name="d" type="number" step="0.5" value="${m.label_d_in ?? ''}" ${dis}></label></div>
+      <span class="muted">Size as written on the drawing label, e.g. B13(9"X18").</span>
+    </form>` : ''}
+    ${RV.canEdit ? `<div class="row rvbtns">
+      <button class="btn pri" data-a="accept" ${m.placed ? '' : 'disabled'}>Looks right <kbd>A</kbd></button>
+      ${m.kind === 'beam' ? `<button class="btn" data-a="save">Save edits <kbd>E</kbd></button><button class="btn" data-a="redraw">Redraw on sheet <kbd>R</kbd></button>` : ''}
+      <button class="btn" data-a="reject">Not on drawing <kbd>X</kbd></button></div>` : '<p class="small muted">You can view this project but not change it.</p>'}
+    <div class="row"><button class="btn sm" data-a="prev" ${RV.i ? '' : 'disabled'}>← Back <kbd>P</kbd></button><button class="btn sm" data-a="next">Skip <kbd>N</kbd></button>
+      ${RV.canEdit ? '<span class="sp"></span><button class="btn sm" data-a="add">Add a missed beam</button>' : ''}</div>
+    <div id="rvPick" class="small"></div>`;
+  form.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); rvAct(b.dataset.a); }));
+  $('#rvEdit')?.addEventListener('submit', e => { e.preventDefault(); rvAct('save'); });
+}
+
+function rvDraw() {
+  const m = RV.q.items[RV.i]; if (!RV.vw) return;
+  const all = RV.members[RV.sheetId] || [];
+  const faint = all.filter(o => !m || o.id !== m.id).map(o => o.kind === 'column'
+    ? `<rect x="${o.x1}" y="${o.y1}" width="${o.x2 - o.x1}" height="${o.y2 - o.y1}" style="stroke:#9CA3AF"/>`
+    : (o.x1 !== o.x2 || o.y1 !== o.y2) ? `<line x1="${o.x1}" y1="${o.y1}" x2="${o.x2}" y2="${o.y2}" stroke="#9CA3AF"/>` : '').join('');
+  let cur = '';
+  if (m && m.kind === 'column') cur = `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}" style="stroke:#C2410C;stroke-width:4"/>`;
+  else if (m && m.placed) cur = `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="#C2410C" style="stroke-width:5;opacity:.9"/>`;
+  if (m && m.label_box) { const [a, b, c, d] = m.label_box; cur += `<rect x="${a - 2}" y="${b - 2}" width="${c - a + 4}" height="${d - b + 4}" style="stroke:#C2410C;stroke-dasharray:3 2"/>`; }
+  const picks = RV.picks.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#2563EB"/>`).join('');
+  RV.vw.setOverlay(faint + cur + picks);
+}
+
+function rvStartPick(mode) {
+  RV.mode = mode; RV.picks = []; rvDraw();
+  const el = $('#rvPick');
+  if (el) el.innerHTML = `<div class="note">${mode === 'add' ? 'Add a beam:' : 'Redraw:'} click one end of the beam on the sheet, then the other. Drag to move around. <button class="btn sm" id="rvCancel">Cancel</button></div>`;
+  $('#rvCancel')?.addEventListener('click', () => { RV.mode = null; RV.picks = []; rvDraw(); $('#rvPick').innerHTML = ''; });
+}
+
+async function rvPick(pt) {
+  if (!RV.mode) return;
+  RV.picks.push(pt); rvDraw();
+  if (RV.picks.length < 2) return;
+  const [a, b] = RV.picks, mode = RV.mode;
+  RV.mode = null;
+  const ends = { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+  if (mode === 'redraw') return rvSend(ends);
+  $('#rvPick').innerHTML = `<form id="rvNew" class="row note"><label>Name <input class="f" name="name" placeholder="B48" style="width:90px" autofocus></label>
+    <label>b×D <input class="f num" name="b" style="width:50px" placeholder="9">×<input class="f num" name="d" style="width:50px" placeholder="18"></label>
+    <button class="btn sm pri">Add</button></form>`;
+  $('#rvNew').addEventListener('submit', async e => {
+    e.preventDefault(); const f = e.target;
+    try {
+      const m = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${RV.sheetId}/members`, { ...ends, name: f.name.value.trim().toUpperCase(), label_b_in: +f.b.value || null, label_d_in: +f.d.value || null });
+      RV.members[RV.sheetId].push(m); RV.q.total++; RV.q.checked++; RV.picks = []; toast(`${m.name} added`); rvShow();
+    } catch (err) { toast(err.message); }
+  });
+  $('#rvNew').name.focus();
+}
+
+async function rvSend(body) {
+  const m = RV.q.items[RV.i];
+  try {
+    const r = await api(`/api/projects/${encodeURIComponent(PID)}/members/${m.id}`, body, 'PATCH');
+    const list = RV.members[RV.sheetId] || []; const k = list.findIndex(o => o.id === r.id); if (k >= 0) list[k] = r;
+    RV.picks = [];
+    if (r.status === 'auto') { RV.q.items[RV.i] = r; rvShow(); return; }
+    RV.q.items.splice(RV.i, 1); RV.q.checked++;
+    toast({ accepted: 'Accepted', edited: 'Saved', rejected: 'Marked not on drawing' }[r.status] || 'Saved');
+    if (RV.i >= RV.q.items.length) RV.i = Math.max(0, RV.q.items.length - 1);
+    rvShow();
+  } catch (err) { toast(err.message); }
+}
+
+function rvAct(a) {
+  const m = RV.q.items[RV.i];
+  if (a === 'next') { if (RV.i < RV.q.items.length - 1) { RV.i++; rvShow(); } return; }
+  if (a === 'prev') { if (RV.i > 0) { RV.i--; rvShow(); } return; }
+  if (!RV.canEdit) return;
+  if (a === 'add') return rvStartPick('add');
+  if (!m) return;
+  if (a === 'accept') return rvSend({ action: 'accept' });
+  if (a === 'reject') return rvSend({ action: 'reject' });
+  if (a === 'redraw') return m.kind === 'beam' && rvStartPick('redraw');
+  if (a === 'save') {
+    const f = $('#rvEdit'); if (!f) return;
+    const body = {}, name = f.name.value.trim().toUpperCase(), b = parseFloat(f.b.value), d = parseFloat(f.d.value);
+    if (name && name !== m.name) body.name = name;
+    if (b && b !== m.label_b_in) body.label_b_in = b;
+    if (d && d !== m.label_d_in) body.label_d_in = d;
+    if (!Object.keys(body).length) { f.name.focus(); toast('Change the name or size, then save'); return; }
+    if (m.placed) body.action = 'accept';
+    return rvSend(body);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (S.view !== 'review' || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,select,textarea')) return;
+  const a = { a: 'accept', e: 'edit', x: 'reject', n: 'next', p: 'prev', r: 'redraw' }[e.key.toLowerCase()];
+  if (!a) { if (e.key === 'Escape' && RV.mode) { RV.mode = null; RV.picks = []; rvDraw(); const el = $('#rvPick'); if (el) el.innerHTML = ''; } return; }
+  e.preventDefault();
+  if (a === 'edit') { $('#rvEdit')?.name.focus(); $('#rvEdit')?.name.select(); return; }
+  rvAct(a);
+});
 
 boot().catch(e => { main.innerHTML = `<div class="pad">Could not load Takeoff. ${esc(e.message)}</div>`; console.error(e); });

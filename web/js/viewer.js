@@ -52,6 +52,11 @@ export class Viewer {
       h.node.style.width = h.node.style.height = (2 * r) + 'px';
     }
   }
+  // Client (screen) coordinates → sheet points.
+  toSheet(clientX, clientY) {
+    const r = this.el.getBoundingClientRect(), k = this.base * this.s;
+    return { x: (clientX - r.left - this.tx) / k, y: (clientY - r.top - this.ty) / k };
+  }
   zoomAt(f, cx, cy) {
     const s2 = Math.min(this.maxZoom, Math.max(this.minZoom, this.s * f));
     const r = s2 / this.s;
@@ -78,11 +83,11 @@ export class Viewer {
       const r = el.getBoundingClientRect();
       this.zoomAt(Math.exp(-e.deltaY * 0.0018), e.clientX - r.left, e.clientY - r.top);
     }, { passive: false });
-    const pts = new Map(); let last = null, pinch = null;
+    const pts = new Map(); let last = null, pinch = null, down = null;
     el.addEventListener('pointerdown', e => {
       if (e.target.closest('.tools,.hot')) return;
       el.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); el.classList.add('drag');
-      last = { x: e.clientX, y: e.clientY }; pinch = null;
+      last = { x: e.clientX, y: e.clientY }; pinch = null; down = { x: e.clientX, y: e.clientY, n: pts.size };
     });
     el.addEventListener('pointermove', e => {
       if (!pts.has(e.pointerId)) return;
@@ -98,7 +103,12 @@ export class Viewer {
       this.tx += e.clientX - last.x; this.ty += e.clientY - last.y; last = { x: e.clientX, y: e.clientY };
       this.layout();
     });
-    const up = e => { pts.delete(e.pointerId); if (!pts.size) el.classList.remove('drag'); pinch = null; const p = [...pts.values()][0]; if (p) last = { x: p.clientX, y: p.clientY }; };
+    const up = e => {
+      // A press that didn't move is a click on the sheet (used to pick points), not a pan.
+      if (e.type === 'pointerup' && down && down.n === 1 && pts.size === 1 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5)
+        this.onSheetClick && this.onSheetClick(this.toSheet(e.clientX, e.clientY));
+      down = null;
+      pts.delete(e.pointerId); if (!pts.size) el.classList.remove('drag'); pinch = null; const p = [...pts.values()][0]; if (p) last = { x: p.clientX, y: p.clientY }; };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     el.querySelectorAll('.tools button').forEach(b => b.addEventListener('click', () => {
       const z = b.dataset.z, cx = el.clientWidth / 2, cy = el.clientHeight / 2;
