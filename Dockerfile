@@ -5,7 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini ./
 COPY app ./app
-COPY tools/__init__.py tools/import_pilot.py ./tools/
+COPY tools/__init__.py tools/import_pilot.py tools/users.py ./tools/
 COPY web ./web
 RUN useradd -m takeoff
 USER takeoff

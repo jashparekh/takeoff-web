@@ -40,7 +40,12 @@ Product rules (non-negotiable):
   `app/db/migrations/` (Alembic; `alembic upgrade head`), `app/services/inputs_builder.py` (DB rows → the engine's
   `inputs` dict, so the engine stays unchanged), `tools/import_pilot.py` (loads `app/data/<slug>` into the DB).
   Until members/bars tables exist (M2–M3), a floor's beams/chajja/slab sit in `floors.structure_json`.
-  The API does not read the DB yet. Plan: `docs/plans/upload-pipeline-implementation.md`.
+  The pilot API does not read the DB yet. Plan: `docs/plans/upload-pipeline-implementation.md`.
+- Auth (M0): `app/auth/` — magic link (`POST /api/auth/link` → email → `GET /auth/callback` page → `POST
+  /auth/verify` sets the `takeoff_session` cookie), DB-backed sessions (only token hashes stored), `GET /api/me`,
+  `POST /api/auth/logout`. Use `Depends(project_role('viewer'|'editor'|'owner'))` on every `/api/projects/{pid}/…`
+  route that reads the DB; non-members get 404. Beta is invite-only (`SIGNUP_ALLOWLIST`, `tools/users.py`).
+  Cross-site writes are refused by an Origin check in `app/main.py`. Email: `MAIL_BACKEND=console|smtp`.
 
 Hash routes: `#overview`, `#model[/B47]`, `#drawings/<sheet>[/<beam>|/@x,y,zoom]`, `#beams`, `#beam/<name>`,
 `#slab`, `#issues`, `#notebook`, `#assumptions`, `#upload`.
