@@ -221,6 +221,7 @@ def spec_dict(b: BeamSpec) -> dict:
                 stirrup=dict(dia=b.stirrup_dia, end_in=b.stirrup_end_in, mid_in=b.stirrup_mid_in),
                 bars=[dict(role=x.role, nos=x.nos, dia=x.dia, extra_top_in=x.extra_top_in) for x in b.bars],
                 box=b.box, tokens=b.tokens, notes=b.notes, source=b.source, confidence=b.confidence, status=b.status,
+                field_status=b.field_status, readings=b.readings,
                 duplicate=b.duplicate_of is not None)
 
 

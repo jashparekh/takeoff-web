@@ -79,6 +79,13 @@ async def layout(ctx, sheet_id: str):
 
 async def schedule(ctx, sheet_id: str):
     await run(ctx, stages.schedule, sheet_id)
+    await ctx['redis'].enqueue_job('vision', sheet_id, _job_id=f'vision:{sheet_id}')
+
+
+async def vision(ctx, sheet_id: str):
+    """Does nothing unless VISION_ENABLED and a key are set."""
+    result = await run(ctx, stages.vision, sheet_id)
+    log.info('vision %s: %s', sheet_id, result)
 
 
 def stale_work(db, at) -> tuple[list, list]:
@@ -134,7 +141,7 @@ async def startup(ctx):
 
 
 class WorkerSettings:
-    functions = [ingest, render, classify, calibrate, layout, schedule]
+    functions = [ingest, render, classify, calibrate, layout, schedule, vision]
     cron_jobs = [cron(requeue_stale, second=0)]            # every minute
     on_startup = startup
     max_tries = MAX_TRIES

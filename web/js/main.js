@@ -829,6 +829,27 @@ async function showMembers(vw, s) {
   $('#sheetVw').before(info);
 }
 
+/* Where OCR and the vision model differ, show every reading side by side; nothing is picked silently. */
+const FIELD_STATUS = { agree: ['agree', 'ok'], model_only: ['model only', 'medium'], ocr_only: ['OCR only', 'medium'], resolved: ['resolved by 2nd model', 'medium'], disagree: ['disagree', 'high'], missing: ['not read', 'high'] };
+function specCompare(b) {
+  if (!b.field_status) return '';
+  const r = b.readings || {}, m = r.model || {}, e = r.escalated || {};
+  const roleKey = { 'Top through': 'top_through', 'Top main': 'top_main', 'Extra top @ support': 'extra_top', 'Bottom through': 'bottom_through', 'Bottom extra': 'bottom_extra' };
+  const bars = list => (list || []).map(g => `${g.nos}×${g.dia}φ`).join(' + ') || '—';
+  const ocrBars = role => bars((r.ocr?.bars || []).filter(x => x[0] === role).map(x => ({ nos: x[1], dia: x[2] })));
+  const val = (src, f) => {
+    if (!src || !Object.keys(src).length) return '—';
+    if (f === 'size') return src === r.ocr ? `${src.size?.[0] ?? '?'}×${src.size?.[1] ?? '?'}` : `${src.b_in ?? '?'}×${src.D_in ?? '?'}`;
+    if (f.startsWith('stirrup_')) { const k = { stirrup_dia: 0, stirrup_end_in: 1, stirrup_mid_in: 2 }[f]; return src === r.ocr ? (src.stirrup?.[k] ?? '—') : (src.stirrups?.[['dia', 'end_in', 'mid_in'][k]] ?? '—'); }
+    return src === r.ocr ? ocrBars(f) : bars(src[roleKey[f]]);
+  };
+  const rows = Object.entries(b.field_status).filter(([, st]) => st !== 'agree');
+  if (!rows.length) return '<div class="muted">OCR and the vision model agree on every field.</div>';
+  return `<div class="tw"><table class="small"><thead><tr><th>Field</th><th></th><th>OCR</th><th>Model</th>${r.escalated ? '<th>2nd model</th>' : ''}</tr></thead><tbody>
+    ${rows.map(([f, st]) => `<tr><td>${esc(f.replace('stirrup_', 'stirrup ').replace('_in', ''))}</td><td>${chip(FIELD_STATUS[st] || [st, ''])}</td><td class="mono">${esc(String(val(r.ocr, f)))}</td><td class="mono">${esc(String(val(m, f)))}</td>${r.escalated ? `<td class="mono">${esc(String(val(e, f)))}</td>` : ''}</tr>`).join('')}
+  </tbody></table></div>`;
+}
+
 /* Beams read off a schedule sheet: each elevation boxed by how complete its reading is; click for the reading. */
 async function showSpecs(vw, s) {
   let specs;
@@ -844,10 +865,10 @@ async function showSpecs(vw, s) {
     const b = byId[h.id]; vw.select(h.id);
     const bars = [...b.bars].sort((p, q) => ROLE_ORDER.indexOf(p.role) - ROLE_ORDER.indexOf(q.role));
     $('#memberInfo').innerHTML = `<b>${esc(b.name)}</b> ${fx(b.b_in)}″ × ${fx(b.D_in)}″${b.kind === 'C' ? ' · cantilever' : ''}${b.duplicate ? ' · <span class="muted">repeat of another sheet, counted once</span>' : ''}
-      · <span style="color:${col(b)}">reading ${fx(b.confidence * 100)}% complete (OCR)</span>
+      · <span style="color:${col(b)}">${b.source === 'ocr' ? `reading ${fx(b.confidence * 100)}% complete (OCR only)` : `confidence ${fx(b.confidence * 100)}% (OCR and vision model)`}</span>
       <div class="tw"><table class="small"><tbody>${bars.map(x => `<tr><td>${esc(x.role)}</td><td class="mono">${x.nos} × ${x.dia}φ${x.extra_top_in ? ` · ${ftIn(x.extra_top_in)}` : ''}</td></tr>`).join('') || '<tr><td class="muted">No bars read</td></tr>'}
         <tr><td>Stirrups</td><td class="mono">${b.stirrup.dia ? `${b.stirrup.dia}φ` : '?φ'} @ ${b.stirrup.end_in ?? '?'}″ ends, ${b.stirrup.mid_in ?? '?'}″ middle</td></tr></tbody></table></div>
-      ${b.notes ? `<div class="note warn">${esc(b.notes)}</div>` : ''}<div class="muted">Read as: ${b.tokens.map(esc).join(' · ') || '—'}</div>`;
+      ${b.notes ? `<div class="note warn">${esc(b.notes)}</div>` : ''}${specCompare(b)}<div class="muted">OCR read: ${b.tokens.map(esc).join(' · ') || '—'}</div>`;
   };
   const info = document.createElement('div'); info.className = 'pad small'; info.id = 'memberInfo';
   const done = specs.filter(b => b.confidence >= 0.9 && !b.duplicate).length;

@@ -343,6 +343,8 @@ class BeamSpec(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(16), default='auto')    # as members: auto / accepted / edited / rejected
     duplicate_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('beam_specs.id', ondelete='SET NULL'))
+    readings: Mapped[dict | None] = mapped_column(Json)                # {ocr: …, model: …, escalated: …} as read
+    field_status: Mapped[dict | None] = mapped_column(Json)            # per field: agree / model_only / ocr_only / disagree
     created_at: Mapped[datetime] = created()
     bars: Mapped[list[Bar]] = relationship(cascade='all, delete-orphan', order_by='Bar.sort')
     __table_args__ = (CheckConstraint(f"kind IN {SPEC_KINDS}", name='kind_valid'),
@@ -361,3 +363,26 @@ class Bar(Base):
     sort: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (CheckConstraint(f"role IN {BAR_ROLES}", name='role_valid'),
                       CheckConstraint('nos >= 1 AND dia > 0', name='bar_positive'))
+
+
+class ModelCall(Base):
+    """One vision-model request (plan M3): cached by crop hash, model and prompt version, so the same crop is never
+    paid for twice; tokens, cost and latency kept for the cost-per-floor numbers."""
+    __tablename__ = 'model_calls'
+    id: Mapped[uuid.UUID] = pk()
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('projects.id', ondelete='SET NULL'), index=True)
+    spec_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('beam_specs.id', ondelete='SET NULL'), index=True)
+    crop_sha256: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))                    # ok / refused / error
+    request_json: Mapped[dict | None] = mapped_column(Json)            # prompt and context (no image bytes)
+    response_json: Mapped[dict | None] = mapped_column(Json)           # the parsed reading
+    error: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    request_id: Mapped[str | None] = mapped_column(String(64))         # Anthropic request id, for support
+    created_at: Mapped[datetime] = created()
+    __table_args__ = (Index('ix_model_calls_cache', 'crop_sha256', 'model', 'prompt_version'),)
