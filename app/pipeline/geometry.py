@@ -244,3 +244,63 @@ def columns(vec: Vectors, pt_per_in: float, edge_width: float) -> list[Rect]:
         if not any(abs(r.cx - k.cx) < 1 and abs(r.cy - k.cy) < 1 for k in keep):
             keep.append(r)
     return keep
+
+
+# ---------- slab outline ----------
+
+@dataclass
+class Outline:
+    points: list[tuple[float, float]]     # polygon, pt, clockwise as traced
+    area_sqft: float                      # area enclosed, beams included
+    holes: list[list[tuple[float, float]]]
+
+
+def slab_outline(vec: Vectors, edge_width: float, strips: list[Strip], pt_per_in: float, k: float = 2.0,
+                 also: tuple[float, ...] = (), margin_in: float = 72) -> Outline | None:
+    """The floor plate: draw every beam-edge segment (straight at any angle, and curves flattened), close dash gaps,
+    fill what they enclose, keep the largest region and trace it. Curved edges count — the pilot's version only
+    took horizontal and vertical lines and so missed the curved corner panel."""
+    import cv2
+    import numpy as np
+    if not strips:
+        return None
+    xs = [p for s in strips for p in ((s.a, s.b) if not s.vertical else (s.c,))]
+    ys = [p for s in strips for p in ((s.a, s.b) if s.vertical else (s.c,))]
+    pad = margin_in * pt_per_in          # slab overhangs past the outermost beams (pilot: 5 ft at the curved corner)
+    x0, y0, x1, y1 = min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
+    W, H = int((x1 - x0) * k) + 1, int((y1 - y0) * k) + 1
+    img = np.zeros((H, W), np.uint8)
+    px = lambda x, y: (int(round((x - x0) * k)), int(round((y - y0) * k)))       # noqa: E731
+    for p in vec.paths:
+        if abs(p.width - edge_width) > 0.005 and not any(abs(p.width - w) < 0.005 for w in also):
+            continue
+        pts = [(x, y) for _, x, y in p.points]
+        for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            if x0 <= ax <= x1 and y0 <= ay <= y1 and x0 <= bx <= x1 and y0 <= by <= y1:
+                cv2.line(img, px(ax, ay), px(bx, by), 255, 2)
+    r = max(1, int(round(BEAM_GAP_CLOSE_IN * pt_per_in * k / 2)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+    closed = cv2.dilate(img, kernel)
+    flood = closed.copy()
+    mask = np.zeros((H + 2, W + 2), np.uint8)
+    cv2.floodFill(flood, mask, (0, 0), 255)                          # outside
+    filled = closed | cv2.bitwise_not(flood)                         # walls + enclosed areas
+    plate = cv2.erode(filled, kernel)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats((plate > 0).astype(np.uint8))
+    if n < 2:
+        return None
+    big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    region = (lab == big).astype(np.uint8)
+    cs, hier = cv2.findContours(region, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    outer_i = max(range(len(cs)), key=lambda i: cv2.contourArea(cs[i]) if hier[0][i][3] < 0 else -1)
+    to_pt = lambda q: (round(x0 + q[0] / k, 2), round(y0 + q[1] / k, 2))       # noqa: E731
+    poly = [to_pt(q) for q in cv2.approxPolyDP(cs[outer_i], OUTLINE_TOL_PT * k, True)[:, 0, :]]
+    holes = [[to_pt(q) for q in cv2.approxPolyDP(c, 1.0 * k, True)[:, 0, :]]
+             for i, c in enumerate(cs) if hier[0][i][3] == outer_i and cv2.contourArea(c) > (24 * pt_per_in * k) ** 2]
+    m_per_pt = 0.0254 / pt_per_in
+    area_sqft = float(region.sum()) / (k * k) * m_per_pt ** 2 / 0.09290304
+    return Outline(poly, round(area_sqft), holes)
+
+
+BEAM_GAP_CLOSE_IN = 15      # dash gaps in beam edges are closed up to about this many inches
+OUTLINE_TOL_PT = 2.0        # outline simplification: drop wiggles under 2 pt (dash ends)

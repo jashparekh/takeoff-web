@@ -29,7 +29,7 @@ from . import ocr, pdf
 
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
-LAYOUT_VERSION = 1
+LAYOUT_VERSION = 2               # 2: cantilevers and slab outline
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -276,14 +276,22 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='column',
                               x1=c.x0, y1=c.y0, x2=c.x1, y2=c.y1,
                               b_in=round(min(c.x1 - c.x0, c.y1 - c.y0) / s.pt_per_in, 1), confidence=0.8))
+            if r.outline and not db.scalar(select(Member.id).where(Member.sheet_id == s.id, Member.kind == 'slab_panel')):
+                xs, ys = [p[0] for p in r.outline.points], [p[1] for p in r.outline.points]
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='slab_panel',
+                              name='Slab', x1=min(xs), y1=min(ys), x2=max(xs), y2=max(ys),
+                              points=[list(p) for p in r.outline.points], area_sqft=r.outline.area_sqft,
+                              confidence=0.7, note='Floor plate traced from the beam edges (beams included).'))
             for u in r.unplaced:
                 db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='beam', name=u.name,
                               vertical=u.vertical, x1=u.x, y1=u.y, x2=u.x, y2=u.y, label_box=list(u.box),
                               label_b_in=u.b_in, label_d_in=u.d_in, confidence=0,
                               note='Label read, but no beam found next to it.'))
-            names = {b.name for b in r.beams}
+            names = {b.name for b in r.beams if not b.cantilever}
+            cants = sum(1 for b in r.beams if b.cantilever)
             s.layout_version = LAYOUT_VERSION
             s.layout_note = (f'{len(names)} beams placed from {len(names | {u.name for u in r.unplaced})} labels read; '
-                             f'{len(r.columns)} columns.')
+                             f'{cants} cantilever parts; {len(r.columns)} columns'
+                             + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
     except Skip:
         return
