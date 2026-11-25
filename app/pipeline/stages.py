@@ -3,8 +3,8 @@ work was done, so running a stage again (a retry, a duplicate queue message, a r
 
 These are plain functions taking a session and storage, so tests run them without Redis; `jobs.py` wraps them
 for the arq worker. Stage chain in M1: ingest(upload) → render(sheet) and classify(sheet) for each new page →
-calibrate(sheet) once its type is known → layout(sheet) for beam layouts with a scale (M2). Then schedule / slab
-by sheet type (M3–M5).
+calibrate(sheet) once its type is known → layout(sheet) for beam layouts with a scale (M2), schedule(sheet) for
+beam schedules (M3). Then slab by sheet type (M5).
 """
 from __future__ import annotations
 import hashlib
@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..db.models import Building, Floor, Job, Member, Sheet, Upload
+from ..db.models import Bar, BeamSpec, Building, Floor, Issue, Job, Member, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
 import numpy as np
@@ -25,10 +25,12 @@ import numpy as np
 from . import calibrate as cal
 from . import classify as cls
 from . import layout as lay
+from . import schedule as sch
 from . import ocr, pdf
 
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
+SCHEDULE_VERSION = 1
 LAYOUT_VERSION = 2               # 2: cantilevers and slab outline
 
 log = logging.getLogger('takeoff.pipeline')
@@ -295,3 +297,59 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                              + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
     except Skip:
         return
+
+
+def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Read a beam schedule sheet into `beam_specs` + `bars` (OCR reading; see schedule.py). Specs a person decided
+    on are kept; elevations already read on another sheet of the project are kept as duplicates and raise one
+    Issue, so the beam is counted once."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.sheet_type != 'beam_schedule':
+        return
+    try:
+        with job(db, 'schedule', s.id, f'{s.page_hash}:v{SCHEDULE_VERSION}', s.project_id, final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                r = sch.read_schedule(f.name, s.page_no)
+            db.refresh(s)
+            db.query(BeamSpec).filter(BeamSpec.sheet_id == s.id, BeamSpec.status == 'auto').delete()
+            kept = set(db.scalars(select(BeamSpec.name).where(BeamSpec.sheet_id == s.id)))
+            others = {b.name: b for b in db.scalars(select(BeamSpec).where(
+                BeamSpec.project_id == s.project_id, BeamSpec.sheet_id != s.id, BeamSpec.duplicate_of.is_(None)))}
+            repeats, n = [], 0
+            for e in r.elevations:
+                name = sch.part_name(e, r.elevations)
+                if not name or name in kept:
+                    continue
+                spec = BeamSpec(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, name=name,
+                                kind='S' if e.name else 'C', b_in=e.b_in, D_in=e.D_in, D2_in=e.D2_in,
+                                stirrup_dia=(e.stirrup or {}).get('dia'), stirrup_end_in=(e.stirrup or {}).get('end_in'),
+                                stirrup_mid_in=(e.stirrup or {}).get('mid_in'), box=list(e.box), tokens=e.tokens,
+                                notes=' '.join(e.notes) or None, source='ocr', confidence=sch.confidence(e))
+                spec.bars = [Bar(role=b.role, nos=b.nos, dia=b.dia, extra_top_in=b.extra_top_in, sort=i)
+                             for i, b in enumerate(e.bars)]
+                if name in others:
+                    spec.duplicate_of = others[name].id
+                    repeats.append(name)
+                db.add(spec)
+                n += 1
+            if repeats:
+                repeat_issue(db, s, repeats)
+            s.schedule_version = SCHEDULE_VERSION
+            s.layout_note = (f'{n} beam elevations read' + (f'; {len(repeats)} repeat another sheet' if repeats else '')
+                             + '.')
+    except Skip:
+        return
+
+
+def repeat_issue(db: Session, s: Sheet, names: list[str]) -> None:
+    """One Issue per sheet listing the elevations it repeats (pilot: schedule sheet 2 repeats B68–B73)."""
+    code = f'REP-{s.drg_no or s.id.hex[:6]}'
+    i = db.scalar(select(Issue).where(Issue.project_id == s.project_id, Issue.code == code))
+    if i is None:
+        i = Issue(project_id=s.project_id, code=code, rule='schedule_repeat', severity='low', kind='Drawing repeats')
+        db.add(i)
+    i.title = f'{s.drg_no or "A schedule sheet"} repeats {len(names)} beam elevation{"s" if len(names) != 1 else ""}'
+    i.detail = f'Already drawn on another schedule sheet: {", ".join(sorted(names, key=lambda n: (len(n), n)))}. Counted once.'
+    i.affects, i.assumption = 'Steel quantity', 'Each beam counted once'
+    i.ask = 'Confirm these are repeats, not separate beams with the same names.'
+    i.beams = sorted({n.split('-')[0] for n in names})

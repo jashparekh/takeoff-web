@@ -70,10 +70,15 @@ async def classify(ctx, sheet_id: str):
 async def calibrate(ctx, sheet_id: str):
     await run(ctx, stages.calibrate, sheet_id)
     await ctx['redis'].enqueue_job('layout', sheet_id, _job_id=f'layout:{sheet_id}')
+    await ctx['redis'].enqueue_job('schedule', sheet_id, _job_id=f'schedule:{sheet_id}')
 
 
 async def layout(ctx, sheet_id: str):
     await run(ctx, stages.layout, sheet_id)
+
+
+async def schedule(ctx, sheet_id: str):
+    await run(ctx, stages.schedule, sheet_id)
 
 
 def stale_work(db, at) -> tuple[list, list]:
@@ -89,9 +94,12 @@ def stale_work(db, at) -> tuple[list, list]:
     unlaid = set(db.scalars(select(Sheet.id).where(
         Sheet.sheet_type == 'beam_layout', Sheet.pt_per_in.is_not(None),
         (Sheet.layout_version.is_(None)) | (Sheet.layout_version != stages.LAYOUT_VERSION))))
+    unlaid |= set(db.scalars(select(Sheet.id).where(       # schedules: read by the 'schedule' stage, same queue slot
+        Sheet.sheet_type == 'beam_schedule',
+        (Sheet.schedule_version.is_(None)) | (Sheet.schedule_version != stages.SCHEDULE_VERSION))))
     for j in db.scalars(select(Job).where(Job.status == 'running', Job.started_at < dead)):
-        {'ingest': ups, 'render': shs, 'classify': unread, 'calibrate': unscaled, 'layout': unlaid}[j.stage].add(
-            j.upload_id if j.stage == 'ingest' else j.sheet_id)
+        {'ingest': ups, 'render': shs, 'classify': unread, 'calibrate': unscaled, 'layout': unlaid,
+         'schedule': unlaid}[j.stage].add(j.upload_id if j.stage == 'ingest' else j.sheet_id)
     return (sorted(ups, key=str), sorted(shs, key=str), sorted(unread, key=str), sorted(unscaled, key=str),
             sorted(unlaid, key=str))
 
@@ -108,8 +116,9 @@ async def requeue_stale(ctx):
         await ctx['redis'].enqueue_job('classify', str(s), _job_id=f'classify:{s}')
     for s in unscaled:
         await ctx['redis'].enqueue_job('calibrate', str(s), _job_id=f'calibrate:{s}')
-    for s in unlaid:
+    for s in unlaid:                                       # each stage does nothing for the other sheet type
         await ctx['redis'].enqueue_job('layout', str(s), _job_id=f'layout:{s}')
+        await ctx['redis'].enqueue_job('schedule', str(s), _job_id=f'schedule:{s}')
     if ups or shs or unread or unscaled or unlaid:
         log.info('requeued %d uploads; sheets: %d to draw, %d to read, %d to scale, %d layouts', len(ups), len(shs),
                  len(unread), len(unscaled), len(unlaid))
@@ -125,7 +134,7 @@ async def startup(ctx):
 
 
 class WorkerSettings:
-    functions = [ingest, render, classify, calibrate, layout]
+    functions = [ingest, render, classify, calibrate, layout, schedule]
     cron_jobs = [cron(requeue_stale, second=0)]            # every minute
     on_startup = startup
     max_tries = MAX_TRIES

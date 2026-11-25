@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ..auth.deps import CurrentUser, Db, project_role
-from ..db.models import Building, Correction, Floor, Member, Project, Sheet, Upload
+from ..db.models import BeamSpec, Building, Correction, Floor, Member, Project, Sheet, Upload
 from ..pipeline.classify import COVERAGE_TYPES, TYPE_LABELS
 from ..settings import get_settings
 from ..storage import Storage, get_storage, upload_key
@@ -214,6 +214,21 @@ def sheet_members(p: Viewer, sheet_id: str, db: Db):
     s = own_sheet(db, p, sheet_id)
     ms = db.scalars(select(Member).where(Member.sheet_id == s.id).order_by(Member.kind, Member.name)).all()
     return [member_dict(m, s.pt_per_in) for m in ms]
+
+
+def spec_dict(b: BeamSpec) -> dict:
+    return dict(id=str(b.id), name=b.name, kind=b.kind, b_in=b.b_in, D_in=b.D_in, D2_in=b.D2_in,
+                stirrup=dict(dia=b.stirrup_dia, end_in=b.stirrup_end_in, mid_in=b.stirrup_mid_in),
+                bars=[dict(role=x.role, nos=x.nos, dia=x.dia, extra_top_in=x.extra_top_in) for x in b.bars],
+                box=b.box, tokens=b.tokens, notes=b.notes, source=b.source, confidence=b.confidence, status=b.status,
+                duplicate=b.duplicate_of is not None)
+
+
+@router.get('/api/projects/{pid}/sheets/{sheet_id}/specs')
+def sheet_specs(p: Viewer, sheet_id: str, db: Db):
+    """Beams read off a schedule sheet: size, stirrups, bars, the elevation box (sheet points) and the raw callouts."""
+    s = own_sheet(db, p, sheet_id)
+    return [spec_dict(b) for b in db.scalars(select(BeamSpec).where(BeamSpec.sheet_id == s.id).order_by(BeamSpec.name))]
 
 
 @router.get('/api/projects/{pid}/sheets/{sheet_id}/{name}')

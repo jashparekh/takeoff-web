@@ -829,6 +829,32 @@ async function showMembers(vw, s) {
   $('#sheetVw').before(info);
 }
 
+/* Beams read off a schedule sheet: each elevation boxed by how complete its reading is; click for the reading. */
+async function showSpecs(vw, s) {
+  let specs;
+  try { specs = await api(`/api/projects/${encodeURIComponent(PID)}/sheets/${s.id}/specs`); } catch { return; }
+  if (!S.viewers.includes(vw)) return;
+  const col = b => b.duplicate ? '#9CA3AF' : confColor(b.confidence);
+  vw.setOverlay(specs.filter(b => b.box).map(b => { const [x0, y0, x1, y1] = b.box;
+    return `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" style="stroke:${col(b)};fill:${col(b)};fill-opacity:.06"/>`; }).join(''));
+  const byId = Object.fromEntries(specs.map(b => [b.id, b]));
+  vw.setHotspots(specs.filter(b => b.box).map(b => ({ id: b.id, label: b.name, color: col(b), x: b.box[0] + 6, y: b.box[1] + 6 })));
+  const ROLE_ORDER = ['Top through', 'Top main', 'Extra top @ support', 'Bottom through', 'Bottom extra'];
+  vw.onPick = h => {
+    const b = byId[h.id]; vw.select(h.id);
+    const bars = [...b.bars].sort((p, q) => ROLE_ORDER.indexOf(p.role) - ROLE_ORDER.indexOf(q.role));
+    $('#memberInfo').innerHTML = `<b>${esc(b.name)}</b> ${fx(b.b_in)}″ × ${fx(b.D_in)}″${b.kind === 'C' ? ' · cantilever' : ''}${b.duplicate ? ' · <span class="muted">repeat of another sheet, counted once</span>' : ''}
+      · <span style="color:${col(b)}">reading ${fx(b.confidence * 100)}% complete (OCR)</span>
+      <div class="tw"><table class="small"><tbody>${bars.map(x => `<tr><td>${esc(x.role)}</td><td class="mono">${x.nos} × ${x.dia}φ${x.extra_top_in ? ` · ${ftIn(x.extra_top_in)}` : ''}</td></tr>`).join('') || '<tr><td class="muted">No bars read</td></tr>'}
+        <tr><td>Stirrups</td><td class="mono">${b.stirrup.dia ? `${b.stirrup.dia}φ` : '?φ'} @ ${b.stirrup.end_in ?? '?'}″ ends, ${b.stirrup.mid_in ?? '?'}″ middle</td></tr></tbody></table></div>
+      ${b.notes ? `<div class="note warn">${esc(b.notes)}</div>` : ''}<div class="muted">Read as: ${b.tokens.map(esc).join(' · ') || '—'}</div>`;
+  };
+  const info = document.createElement('div'); info.className = 'pad small'; info.id = 'memberInfo';
+  const done = specs.filter(b => b.confidence >= 0.9 && !b.duplicate).length;
+  info.innerHTML = `${specs.length} beam elevations read by OCR; ${done} look complete. Readings are not used for quantities until checked. Click an elevation for what was read.`;
+  $('#sheetVw').before(info);
+}
+
 function showSheet(id) {
   const s = S.upSheets?.[id], el = $('#sheetView'); if (!el) return;
   S.viewers.forEach(v => v.destroy()); S.viewers = [];
@@ -849,6 +875,7 @@ function showSheet(id) {
   const vw = new Viewer($('#sheetVw'), { title: `${s.filename} page ${s.page_no}`, width: s.width_pt, height: s.height_pt }, { src: s.image_url });
   S.viewers.push(vw);
   if (s.sheet_type === 'beam_layout') showMembers(vw, s);
+  if (s.sheet_type === 'beam_schedule') showSpecs(vw, s);
   $('#closeSheet').addEventListener('click', () => { S.viewers.forEach(v => v.destroy()); S.viewers = []; el.hidden = true; history.replaceState(null, '', `${P}upload`); });
   $('#scaleForm')?.addEventListener('submit', async e => {
     e.preventDefault();

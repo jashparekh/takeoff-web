@@ -1,6 +1,6 @@
-"""Compare the layout reader with the hand-checked Work Lounge pilot (plan M2 step 6).
+"""Compare the drawing readers with the hand-checked Work Lounge pilot (plan M2 step 6, M3 step 9).
 
-    python -m tools.golden_report [--pt-per-in 0.6] [--json out.json]
+    python -m tools.golden_report [--pt-per-in 0.6] [--schedules] [--json out.json]
 
 Pilot truth: `app/data/worklounge/project.json` label positions (hotspots; ~20 placed by hand) and `model.json`
 beam centrelines and columns (from tools/extract_model.py with the schedule's clear spans). Prints labels found,
@@ -86,12 +86,58 @@ def report(pt_per_in: float) -> dict:
     return out
 
 
+SCHEDULES = sorted((DATA / 'source').glob('*BEAM SCHEDULE*.pdf'))
+
+
+def schedule_report() -> dict:
+    """Schedule reader against the pilot's hand-entered beams (`inputs.json`): per beam, is the size right, are the
+    bars (role, number, diameter) right, are the stirrups right, and is all of it right."""
+    import collections
+    from app.pipeline.schedule import part_name, read_schedule
+    truth = {b['name']: b for b in json.loads((DATA / 'inputs.json').read_text())['beams']}
+    t = time.time()
+    got, repeats = {}, []
+    for f in SCHEDULES:
+        s = read_schedule(str(f), 1)
+        for e in s.elevations:
+            n = part_name(e, s.elevations)
+            if not n:
+                continue
+            if n in got:
+                repeats.append(n)
+            else:
+                got[n] = e
+    key = lambda bars: collections.Counter((b['role'], b['nos'], b['dia']) for b in bars)    # noqa: E731
+    c = collections.Counter()
+    for n, tb in truth.items():
+        e = got.get(n)
+        if e is None:
+            continue
+        size = (e.b_in, e.D_in) == (tb['b_in'], tb['D_in'])
+        bars = key([b.__dict__ for b in e.bars]) == key(tb['bars'])
+        stir = e.stirrup == tb['stirrup']
+        c['size'] += size
+        c['bars'] += bars
+        c['stirrups'] += stir
+        c['all'] += size and bars and stir
+    return dict(seconds=round(time.time() - t, 1), beams_schedule=len(truth),
+                elevations_matched=sum(1 for n in truth if n in got),
+                size_right=c['size'], bars_right=c['bars'], stirrups_right=c['stirrups'],
+                fully_right=c['all'], fully_right_pct=round(100 * c['all'] / len(truth)),
+                repeated_elevations=sorted(set(repeats)),
+                missing=sorted(n for n in truth if n not in got),
+                not_in_schedule=sorted(n for n in got if n not in truth))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--pt-per-in', type=float, default=0.6)
     ap.add_argument('--json')
+    ap.add_argument('--schedules', action='store_true', help='also read the beam schedules')
     a = ap.parse_args(argv)
     r = report(a.pt_per_in)
+    if a.schedules:
+        r.update({f'schedule_{k}': v for k, v in schedule_report().items()})
     for k, v in r.items():
         print(f'{k:24} {v}')
     if a.json:
