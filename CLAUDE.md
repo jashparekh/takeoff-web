@@ -101,6 +101,14 @@ Product rules (non-negotiable):
   after stages and Review edits. Review also lists schedule readings with a bar editor (`PATCH …/specs/{id}`,
   `POST …/sheets/{id}/specs`). `tests/test_acceptance.py`: upload → review via the API → inputs equal `inputs.json`
   and 7,744 kg (review effort printed: mostly spans and bars).
+- Values we need (M4 PR 1): `app/services/values.py` is the registry of every value the calculation uses (label,
+  unit, group, proposed default, range, whether a person must confirm it). `ensure_values` adds missing ones to a
+  project (on create, pilot import and open) with `confirmed_at = None`. `GET /api/projects/{pid}/values-needed`
+  (all values + `needed` count), `PUT …/assumptions {values: [{key, value?, confirm}]}` (editor; all or nothing;
+  range-checked; changing a value clears its confirmation unless ticked again; corrections `value:<key>`). Engine
+  conventions are values with today's defaults in `engine.CONVENTIONS` (`extra_top_frac` ⅓ — the L/3 fallback,
+  `stirrup_hook_d` 10, `cant_hook_d` 12), so pinned totals are unchanged. Frontend `#p/<slug>/values` with a nav count;
+  the Assumptions view stays a browser-only what-if. Runs gated on confirmation come in M4 PR 2.
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
@@ -139,7 +147,7 @@ Product rules (non-negotiable):
 
 Hash routes: `#signin[/expired]`, `#projects`, `#new`, and per project `#p/<slug>/<view>` where view is `overview`,
 `model[/B47]`, `drawings/<sheet>[/<beam>|/@x,y,zoom]`, `beams`, `beam/<name>`, `slab`, `issues`, `notebook`,
-`assumptions`, `upload[/<sheet id>]`, `review[/<member id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
+`values`, `assumptions`, `upload[/<sheet id>]`, `review[/<member id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
 in-project links with the `P` prefix (`href="${P}beams"`). A project with no measured floor shows only Overview
 (buildings and floors) and Add drawings.
 

@@ -30,7 +30,7 @@ def engine_version() -> str:
 
 def assumptions_list(project: Project) -> list[dict]:
     return [dict(key=a.key, label=a.label, value=a.value, unit=a.unit, group=a.group, source=a.source,
-                 confirm=a.needs_confirm) for a in project.assumptions]
+                 confirm=a.needs_confirm, confirmed=a.confirmed_at is not None) for a in project.assumptions]
 
 
 CHECKED = ('accepted', 'edited', 'added')          # a person has looked at it in Review

@@ -17,6 +17,7 @@ from app.db.models import Assumption, Building, Floor, Issue, Project, Run, Site
 from app.db.session import session_factory
 from app.engine import Calc
 from app.services.inputs_builder import engine_version
+from app.services.values import ensure_values
 
 DATA = Path(__file__).parents[1] / 'app' / 'data'
 META_COLS = ('name', 'scope', 'client', 'consultant', 'revision', 'status')
@@ -63,6 +64,7 @@ def import_pilot(session: Session, slug: str, replace: bool = False, data_dir: P
         p.assumptions.append(Assumption(key=a['key'], label=a['label'], value=float(a['value']), unit=a.get('unit'),
                                         group=a.get('group'), source=a.get('source'),
                                         needs_confirm=bool(a.get('confirm')), sort=i))
+    ensure_values(p)                     # values the workbook does not hold (grades, conventions): proposed, unconfirmed
     for x in read(d, 'issues.json') or []:
         p.issues.append(Issue(code=x['id'], where_json=x.get('where'), **{k: x.get(k) for k in ISSUE_COLS}))
 

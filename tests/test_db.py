@@ -37,8 +37,15 @@ def test_built_inputs_equal_inputs_json(pilot):
     assert built['beams'] == INPUTS['beams']
     assert built['chajja'] == INPUTS['chajja']
     assert built['slab'] == INPUTS['slab']
-    assert [(a['key'], a['value'], a['confirm']) for a in built['assumptions']] == \
+    n = len(INPUTS['assumptions'])
+    assert [(a['key'], a['value'], a['confirm']) for a in built['assumptions'][:n]] == \
            [(a['key'], a['value'], a['confirm']) for a in INPUTS['assumptions']]
+    # Values the workbook does not hold are added from the registry, proposed and unconfirmed; the conventions keep
+    # today's values, so the pilot's totals are unchanged.
+    extra = {a['key']: (a['value'], a['confirm'], a['confirmed']) for a in built['assumptions'][n:]}
+    assert extra == {'concrete_grade': (25, True, False), 'steel_grade': (550, True, False),
+                     'extra_top_frac': (1 / 3, True, False), 'stirrup_hook_d': (10, True, False),
+                     'cant_hook_d': (12, True, False)}
 
 
 def test_import_records(session, pilot):
