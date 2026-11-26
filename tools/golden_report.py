@@ -99,6 +99,10 @@ def span_report(lay, inputs) -> dict:
         spans_dimension_agrees_with_geometry=sum(1 for b in dim if b.geo_clear_in and abs(b.clear_in - b.geo_clear_in) <= 1),
         spans_within_1in_of_workbook=sum(1 for b in plain if b.clear_in and abs(b.clear_in - wb[b.name]) <= 1),
         spans_drawn_4_5in_over_workbook=sorted(b.name for b in dim if b.name in wb and 3.5 <= b.clear_in - wb[b.name] <= 5.5),
+        spans_matching_workbook_or_drawn=sum(1 for b in plain if b.clear_in and (abs(b.clear_in - wb[b.name]) <= 1 or
+                                                                                3.5 <= b.clear_in - wb[b.name] <= 5.5)),
+        spans_short=sorted(b.name for b in plain if b.clear_in and b.clear_in - wb[b.name] < -1),
+        spans_long=sorted(b.name for b in plain if b.clear_in and b.clear_in - wb[b.name] > 5.5),
         spans_compared=len(plain))
 
 

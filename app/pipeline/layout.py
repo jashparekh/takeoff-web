@@ -11,6 +11,7 @@ member carries a confidence; low ones go to the Review queue (M2 PR 2).
 """
 from __future__ import annotations
 import ctypes
+import itertools
 import math
 import re
 import statistics
@@ -174,27 +175,73 @@ class Layout:
     outline: g.Outline | None = None
 
 
-def cuts(s: g.Strip, strips: list[g.Strip], cols: list[g.Rect]) -> tuple[list[float], list[float]]:
+def cuts(s: g.Strip, strips: list[g.Strip], cols: list[g.Rect], ppi: float = 0.6,
+         labels: list[float] | None = None) -> tuple[list[float], list[float]]:
     """Positions along strip `s` where a span may end.
-    Hard: columns, and perpendicular beams that pass right across `s` (+).
-    Soft: perpendicular beams that only frame into `s` from one side (T) — usually they rest on `s` and do not
-    split it, but where two different labels share a span, the span is split at a soft cut between them."""
-    hard, soft = {s.a, s.b}, set()
+    Hard: columns, and the ends of the strip.
+    Soft: perpendicular beams, whether they frame in from one side (T) or pass right across (X). A beam is drawn
+    continuous through another beam unless its label says otherwise (the pilot's spans run through crossings: their
+    c/c is the workbook span + one beam width); so a span is split at a soft cut only where two different labels share
+    it."""
+    hard, soft, through = {s.a, s.b}, set(), set()
     half = s.width_pt / 2
     for p in strips:
         if p.vertical == s.vertical or not (s.a - 3 <= p.c <= s.b + 3):
             continue
-        through = p.a < s.c - half - 3 and p.b > s.c + half + 3
-        touches = p.a - 3 <= s.c + half and p.b + 3 >= s.c - half
-        if through:
-            hard.add(p.c)
-        elif touches:
+        if p.a - 3 <= s.c + half and p.b + 3 >= s.c - half:      # touches or crosses
             soft.add(p.c)
+            if p.a < s.c - half - 3 and p.b > s.c + half + 3:
+                through.add(p.c)
     for r in cols:
         across, along = (r.cx, r.cy) if s.vertical else (r.cy, r.cx)
         if abs(across - s.c) < 6 and s.a - 3 <= along <= s.b + 3:
             hard.add(along)
+    # An overhang: past the last beam that crosses the line there is no column and no label, so the line beyond is a
+    # cantilever (add_cantilevers reads it) and the span stops at that beam.
+    inner = sorted(c for c in hard if s.a + 3 < c < s.b - 3)
+    labelled = [] if labels is None else labels
+    col_at = [(r.cy if s.vertical else r.cx) for r in cols if abs((r.cx if s.vertical else r.cy) - s.c) < 6]
+    for end in (s.a, s.b):
+        if any(abs(x - end) <= 12 for x in col_at):     # the line ends on a column: supported, not an overhang
+            continue
+        xs = sorted((c for c in through if OVERHANG_IN[0] * ppi <= abs(c - end) <= OVERHANG_IN[1] * ppi),
+                    key=lambda c: abs(c - end))
+        if not xs:
+            continue
+        root = xs[0]
+        lo, hi = sorted((root, end))
+        if not any(lo + 3 < c < hi - 3 for c in inner) and not any(lo < x < hi for x in labelled):
+            hard.add(root)
     return sorted(hard), sorted(soft - hard)
+
+
+OVERHANG_IN = (12, 110)        # a cantilever past its root beam: longer than the tip's edge beam, at most ~9 ft
+
+
+def centred_cuts(inside: list, soft: list[float], a: float, b: float) -> list[float]:
+    """Where to split span a–b shared by different labels (`inside`, sorted along it). A label is written at the
+    middle of its own span, so between each pair of neighbouring labels pick the soft cut that, over the whole span,
+    puts every label nearest the centre of its piece. Labels with no cut between them stay together."""
+    groups: list[list] = []                       # runs of the same name: [name, mean position]
+    for along, _, lb in inside:
+        if groups and groups[-1][0] == lb.name:
+            groups[-1][1] = (groups[-1][1] + along) / 2
+        else:
+            groups.append([lb.name, along])
+    if len(groups) < 2:
+        return []
+    choices = [[c for c in soft if x1 < c < x2] or [None] for (_, x1), (_, x2) in zip(groups, groups[1:])]
+    best = None
+    for picked in itertools.product(*choices):                # few labels share a span
+        bounds = [a] + [c for c in picked if c is not None] + [b]
+        cost, k = 0.0, 0
+        for gi, (_, x) in enumerate(groups):
+            cost += abs((bounds[k] + bounds[k + 1]) / 2 - x)
+            if gi < len(picked) and picked[gi] is not None:
+                k += 1
+        if best is None or cost < best[0]:
+            best = (cost, [c for c in picked if c is not None])
+    return best[1]
 
 
 def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per_in: float) -> Layout:
@@ -219,7 +266,7 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
 
     for i, items in on.items():
         s = strips[i]
-        hard, soft = cuts(s, strips, cols)
+        hard, soft = cuts(s, strips, cols, pt_per_in, [along for along, _, _ in items])
         spans: dict[tuple, list] = defaultdict(list)    # hard span → labels in it
         for along, d, lb in items:
             a = max((c for c in hard if c <= along), default=s.a)
@@ -228,17 +275,14 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
         for (a, b), inside in spans.items():
             inside.sort(key=lambda t: t[0])
             names = [lb.name for _, _, lb in inside]
-            bounds = [a]
-            for (x1, _, l1), (x2, _, l2) in zip(inside, inside[1:]):
-                if l1.name == l2.name:
-                    continue
-                between = [c for c in soft if x1 < c < x2]
-                if between:                              # split where the two labels' beams meet
-                    bounds.append(min(between, key=lambda c: abs(c - (x1 + x2) / 2)))
-            bounds.append(b)
-            for along, d, lb in inside:
+            bounds = [a] + centred_cuts(inside, soft, a, b) + [b]
+            seen = set()
+            for along, d, lb in sorted(inside, key=lambda t: t[1]):        # nearest label first
                 k = max(j for j in range(len(bounds) - 1) if bounds[j] <= along or j == 0)
                 lo, hi = bounds[k], bounds[k + 1]
+                if (lb.name, lo, hi) in seen:                             # the same label read twice on one span
+                    continue
+                seen.add((lb.name, lo, hi))
                 p1, p2 = ((s.c, lo), (s.c, hi)) if s.vertical else ((lo, s.c), (hi, s.c))
                 conf = round(max(0.0, 1 - d / near) * 0.5 + min(lb.reads, 3) / 3 * 0.5, 2)
                 note = None
