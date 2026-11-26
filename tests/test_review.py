@@ -79,3 +79,44 @@ def test_outsiders_and_wrong_ids(client, sheet):
     client.cookies.clear()
     sign_in(client, 'new@example.com')
     assert client.patch('/api/projects/site-b/members/nope', json=dict(action='accept')).status_code == 404
+
+
+def test_a_schedule_change_in_review_reads_the_layout_again(client, session, sheet):
+    """The schedule settles cantilevers on the layout, so a Review change to which beams have cantilever parts queues
+    the floor's layouts to be read again (after the change is committed). Other edits don't."""
+    from app.api.review import get_relayout
+    from app.main import app
+    from app.db.models import Bar, BeamSpec
+    from app.pipeline import stages
+    from app.pipeline.jobs import stale_work
+    s, _ = sheet
+    u = session.get(Upload, s.upload_id)
+    sch = Sheet(project_id=s.project_id, upload_id=u.id, page_no=2, page_hash='h2', width_pt=1191, height_pt=842,
+                status='ready', sheet_type='beam_schedule', drg_no='MC-SD-06-01')
+    session.add(sch)
+    session.flush()
+    b5 = BeamSpec(project_id=s.project_id, sheet_id=sch.id, name='B5', b_in=9, D_in=18, stirrup_dia=8,
+                  bars=[Bar(role='Bottom through', nos=2, dia=12, sort=0)])
+    session.add(b5)
+    session.flush()
+    s.layout_version, s.layout_schedule = stages.LAYOUT_VERSION, stages.schedule_key(stages.schedule_cants(session, s))
+    session.flush()
+    calls = []
+    app.dependency_overrides[get_relayout] = lambda: (lambda ids, reason: calls.append(list(ids)))
+    sign_in(client, 'new@example.com')
+
+    r = client.patch(f'/api/projects/site-b/specs/{b5.id}', json=dict(stirrup_mid_in=8)).json()
+    assert r['layouts_rereading'] == 0 and calls == []                  # cantilevers unchanged
+
+    bars = [dict(role='Top through', nos=2, dia=12), dict(role='Bottom through', nos=2, dia=12)]
+    r = client.post(f'/api/projects/site-b/sheets/{sch.id}/specs',
+                    json=dict(name='B5-cant', b_in=9, D_in=18, bars=bars))
+    assert r.status_code == 201 and r.json()['layouts_rereading'] == 1 and calls == [[s.id]]
+    assert stages.stale_schedule(session, s)
+    assert s.id in stale_work(session, stages.now())[4]               # the minute sweep would queue it too
+
+    s.layout_schedule = stages.schedule_key(stages.schedule_cants(session, s))   # as if the worker read it again
+    session.flush()
+    cant = session.scalar(select(BeamSpec).where(BeamSpec.name == 'B5-cant'))
+    r = client.patch(f'/api/projects/site-b/specs/{cant.id}', json=dict(action='reject')).json()
+    assert r['layouts_rereading'] == 1 and len(calls) == 2              # rejecting it changes them back

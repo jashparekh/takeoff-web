@@ -107,6 +107,10 @@ def stale_work(db, at) -> tuple[list, list]:
     unlaid = set(db.scalars(select(Sheet.id).where(
         Sheet.sheet_type == 'beam_layout', Sheet.pt_per_in.is_not(None),
         (Sheet.layout_version.is_(None)) | (Sheet.layout_version != stages.LAYOUT_VERSION))))
+    # Layouts read before the floor's schedule changed what it says about cantilevers (a schedule read, or Review).
+    unlaid |= {s.id for s in db.scalars(select(Sheet).where(
+        Sheet.sheet_type == 'beam_layout', Sheet.pt_per_in.is_not(None), Sheet.layout_version == stages.LAYOUT_VERSION))
+        if stages.stale_schedule(db, s)}
     unlaid |= set(db.scalars(select(Sheet.id).where(       # schedules: read by the 'schedule' stage, same queue slot
         Sheet.sheet_type == 'beam_schedule',
         (Sheet.schedule_version.is_(None)) | (Sheet.schedule_version != stages.SCHEDULE_VERSION))))
@@ -155,6 +159,17 @@ class WorkerSettings:
     max_jobs = 2                                           # one page renders at a time per job; keep memory bounded
     keep_result = 60                                       # short, so a job id can be queued again soon
     redis_settings = queue_redis() if get_settings().redis_url else RedisSettings()
+
+
+async def enqueue_layouts(sheet_ids, reason: str) -> None:
+    """Called by the web process after a Review change to the schedule is committed: read these layouts again."""
+    from arq import create_pool
+    pool = await create_pool(queue_redis())
+    try:
+        for sid in sheet_ids:
+            await pool.enqueue_job('layout', str(sid), _job_id=f'layout:{sid}:{reason}')
+    finally:
+        await pool.aclose()
 
 
 async def enqueue_ingest(upload_id) -> None:

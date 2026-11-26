@@ -5,22 +5,51 @@ Accept, edit (name, label size, or redraw the centreline on the sheet), mark "no
 reader missed. Every change writes `corrections`, so the reader can be measured against what people decided.
 """
 from __future__ import annotations
+import logging
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Callable, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+import anyio
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from ..auth.deps import CurrentUser, Db, project_role
 from ..db.models import BAR_ROLES, Bar, BeamSpec, Correction, Member, Project, Sheet
 from ..services import checks
+from ..settings import get_settings
 from .uploads import member_dict, own_sheet, spec_dict
 
 router = APIRouter()
 Viewer = Annotated[Project, Depends(project_role('viewer'))]
 Editor = Annotated[Project, Depends(project_role('editor'))]
 NAME = r'^(?:H?B|CB)\d{1,3}[A-Z]?(?:-[A-Za-z]+)?$'
+log = logging.getLogger(__name__)
+
+
+def get_relayout() -> Callable:
+    """Queues layout re-reads (sheet ids, reason). Overridden in tests. Without REDIS_URL nothing is queued; the
+    worker's minute sweep finds layouts read with an older schedule anyway."""
+    if not get_settings().redis_url:
+        return lambda ids, reason: log.warning('REDIS_URL not set: layouts %s not queued', ids)
+    from ..pipeline.jobs import enqueue_layouts
+    return lambda ids, reason: anyio.from_thread.run(enqueue_layouts, ids, reason)
+
+
+Relayout = Annotated[Callable, Depends(get_relayout)]
+
+
+def relayout_if_needed(db, p: Project, floor_id, relayout: Callable, tasks: BackgroundTasks) -> int:
+    """A schedule change in Review can change which overhangs on the floor's layouts are cantilevers (the schedule
+    settles them). Layouts read with an older schedule are queued to be read again, after this change is committed
+    (people's decisions on members are kept). Returns how many."""
+    from ..pipeline import stages
+    stale = [sid for sid in stages.layouts_on_floor(db, p.id, floor_id)
+             if stages.stale_schedule(db, db.get(Sheet, sid))]
+    if stale:
+        db.commit()                                  # the worker must see this change
+        tasks.add_task(relayout, stale, f'review:{uuid.uuid4().hex[:8]}')
+    return len(stale)
 
 
 def item(m: Member, s: Sheet, slug: str) -> dict:
@@ -151,7 +180,8 @@ class SpecPatch(BaseModel):
 
 
 @router.patch('/api/projects/{pid}/specs/{spec_id}')
-def change_spec(p: Editor, spec_id: str, req: SpecPatch, user: CurrentUser, db: Db):
+def change_spec(p: Editor, spec_id: str, req: SpecPatch, user: CurrentUser, db: Db, relayout: Relayout,
+                tasks: BackgroundTasks):
     """Accept, fix or reject a schedule reading. Every change is recorded in corrections."""
     try:
         b = db.get(BeamSpec, uuid.UUID(spec_id))
@@ -190,7 +220,8 @@ def change_spec(p: Editor, spec_id: str, req: SpecPatch, user: CurrentUser, db: 
             b.status = new_status
     db.flush()
     checks.run(db, p.id)
-    return spec_item(b, db.get(Sheet, b.sheet_id), p.slug)
+    n = relayout_if_needed(db, p, b.floor_id, relayout, tasks)
+    return {**spec_item(b, db.get(Sheet, b.sheet_id), p.slug), 'layouts_rereading': n}
 
 
 class SpecNew(BaseModel):
@@ -206,7 +237,8 @@ class SpecNew(BaseModel):
 
 
 @router.post('/api/projects/{pid}/sheets/{sheet_id}/specs', status_code=201)
-def add_spec(p: Editor, sheet_id: str, req: SpecNew, user: CurrentUser, db: Db):
+def add_spec(p: Editor, sheet_id: str, req: SpecNew, user: CurrentUser, db: Db, relayout: Relayout,
+             tasks: BackgroundTasks):
     """A schedule reading the reader missed, entered by a person from the elevation."""
     s = own_sheet(db, p, sheet_id)
     if s.sheet_type != 'beam_schedule':
@@ -223,7 +255,8 @@ def add_spec(p: Editor, sheet_id: str, req: SpecNew, user: CurrentUser, db: Db):
     db.flush()
     db.add(Correction(project_id=p.id, sheet_id=s.id, field=f'spec:{req.name}:added', user_id=user.id, new_value=req.name))
     checks.run(db, p.id)
-    return spec_item(b, s, p.slug)
+    n = relayout_if_needed(db, p, b.floor_id, relayout, tasks)
+    return {**spec_item(b, s, p.slug), 'layouts_rereading': n}
 
 
 class MemberNew(BaseModel):

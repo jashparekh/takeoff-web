@@ -268,16 +268,31 @@ def schedule_cants(db: Session, s: Sheet) -> dict[str, bool] | None:
     return {n: any(m.startswith(n + '-cant') for m in names) for n in sorted(names) if '-cant' not in n}
 
 
+def schedule_key(cants: dict[str, bool] | None) -> str:
+    """Short hash of what the schedules say about cantilevers; 'none' before a schedule is read."""
+    return hashlib.sha1(repr(sorted(cants.items())).encode()).hexdigest()[:10] if cants else 'none'
+
+
+def stale_schedule(db: Session, s: Sheet) -> bool:
+    """A layout read before the floor's schedule last changed what it says about cantilevers."""
+    return s.layout_version is not None and s.layout_schedule != schedule_key(schedule_cants(db, s))
+
+
+def layouts_on_floor(db: Session, project_id, floor_id) -> list:
+    """Beam layouts with a scale whose reading depends on this floor's schedules (same floor, or no floor set)."""
+    q = select(Sheet.id).where(Sheet.project_id == project_id, Sheet.sheet_type == 'beam_layout',
+                               Sheet.pt_per_in.is_not(None))
+    if floor_id:
+        q = q.where((Sheet.floor_id == floor_id) | Sheet.floor_id.is_(None))
+    return list(db.scalars(q))
+
+
 def layout_sheets_for(db: Session, schedule_sheet_id) -> list:
     """Beam layouts whose reading depends on this schedule sheet (same project, same floor or no floor set)."""
     s = db.get(Sheet, schedule_sheet_id)
     if s is None or s.sheet_type != 'beam_schedule':
         return []
-    q = select(Sheet.id).where(Sheet.project_id == s.project_id, Sheet.sheet_type == 'beam_layout',
-                               Sheet.pt_per_in.is_not(None))
-    if s.floor_id:
-        q = q.where((Sheet.floor_id == s.floor_id) | Sheet.floor_id.is_(None))
-    return list(db.scalars(q))
+    return layouts_on_floor(db, s.project_id, s.floor_id)
 
 
 def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
@@ -290,7 +305,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
         return
     try:
         cants = schedule_cants(db, s)
-        sched = hashlib.sha1(repr(sorted(cants.items())).encode()).hexdigest()[:10] if cants else 'none'
+        sched = schedule_key(cants)
         with job(db, 'layout', s.id, f'{s.page_hash}:v{LAYOUT_VERSION}:{s.pt_per_in:.4f}:{sched}', s.project_id,
                  final=final, sheet_id=s.id):
             with fetch(storage, s.upload.storage_key) as f:
@@ -324,7 +339,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
             checks.run(db, s.project_id)
             names = {b.name for b in r.beams if not b.cantilever}
             cants = sum(1 for b in r.beams if b.cantilever)
-            s.layout_version = LAYOUT_VERSION
+            s.layout_version, s.layout_schedule = LAYOUT_VERSION, sched
             s.layout_note = (f'{len(names)} beams placed from {len(names | {u.name for u in r.unplaced})} labels read; '
                              f'{cants} cantilever parts; {len(r.columns)} columns; '
                              f'{sum(b.clear_source == "dimension" for b in r.beams)} spans from drawn dimensions'
