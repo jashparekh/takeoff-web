@@ -50,14 +50,17 @@ Product rules (non-negotiable):
   the nearest parallel strip; spans end at columns and the line's ends. Beams that frame in (T) or cross (X) do not end a
   span (the pilot's spans run through them) except where two labels share a line (split at the crossings that put
   each label nearest the middle of its piece) or past the last crossing beam with no column and no label for 12"–110"
-  (an overhang: the span stops at that root beam). Results in `members` (sheet points); people's decisions
+  (an overhang: the span stops at that root beam). Between two labels a crossing beam is preferred to one framing in.
+  Labels: different names read on the same spot are settled to one (more reads, then a name not read more clearly
+  elsewhere, then the longer name — B85 not B5); a label read once whose name is read clearly elsewhere is doubtful
+  (confidence ≤ 0.3, noted) and takes no span on a line with clear labels. Results in `members` (sheet points); people's decisions
   (status ≠ auto) survive re-reads. Cantilevers: a beam's line followed outward past its root column to where it runs
   out with no further column → `B7-cant` / `-cantL` / `-cantR` (16 of the schedule's 21 cantilever beams, 6 extra;
   confidence ≤ 0.5 so Review shows them early). Floor plate: every beam-edge segment at any angle within 6 ft of the
   frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
   corner the pilot missed). `python -m tools.golden_report` compares with the pilot (83 of 88 beams within 4 ft,
-  median 0.1"; 25/25 columns; spans 71 of 93 equal the workbook or the drawn 4–5" over it, 65 of 99 before
-  spans ran through crossings).
+  median 0.1"; 25/25 columns; spans 73 of 87 equal the workbook or the drawn 4–5" over it; of the 8 short, all but
+  B5 — a false overhang the schedule check flags — are face-to-face spans where the workbook took the pilot's c/c − 9").
 - `app/pipeline/schedule.py` — beam schedules (M3, OCR pass): names/dims and bar callouts are drawn in two lettering
   widths (0.48 / 0.6 pt on the pilot), each rendered alone and OCR'd (callouts: 4 passes, voted); elevations = the
   outline width whose rows sit over the most labels, split at supports; size-only labels next to a beam are its
