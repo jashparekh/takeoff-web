@@ -34,7 +34,7 @@ from . import ocr, pdf
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
-LAYOUT_VERSION = 6               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans through crossings; 6: settled label names
+LAYOUT_VERSION = 7               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans through crossings; 6: settled label names; 7: schedule settles cantilevers
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731
@@ -255,18 +255,46 @@ def borrow(db: Session, s: Sheet) -> None:
                     f'(same printed scale and sheet size). Confirm it is the same.')
 
 
+def schedule_cants(db: Session, s: Sheet) -> dict[str, bool] | None:
+    """What the schedules read for this layout's floor say about cantilevers: beam → has a cantilever part. None until
+    a schedule is read. Specs a person rejected, and repeats, do not count."""
+    q = select(BeamSpec.name).where(BeamSpec.project_id == s.project_id, BeamSpec.status != 'rejected',
+                                    BeamSpec.duplicate_of.is_(None))
+    if s.floor_id:
+        q = q.where((BeamSpec.floor_id == s.floor_id) | BeamSpec.floor_id.is_(None))
+    names = set(db.scalars(q))
+    if not names:
+        return None
+    return {n: any(m.startswith(n + '-cant') for m in names) for n in sorted(names) if '-cant' not in n}
+
+
+def layout_sheets_for(db: Session, schedule_sheet_id) -> list:
+    """Beam layouts whose reading depends on this schedule sheet (same project, same floor or no floor set)."""
+    s = db.get(Sheet, schedule_sheet_id)
+    if s is None or s.sheet_type != 'beam_schedule':
+        return []
+    q = select(Sheet.id).where(Sheet.project_id == s.project_id, Sheet.sheet_type == 'beam_layout',
+                               Sheet.pt_per_in.is_not(None))
+    if s.floor_id:
+        q = q.where((Sheet.floor_id == s.floor_id) | Sheet.floor_id.is_(None))
+    return list(db.scalars(q))
+
+
 def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
     """Read beams and columns off a beam layout sheet into `members`. Needs a scale (any status: the scale only sets
     which line spacings count as beams; lengths use the settled scale later). Members a person decided on are
-    kept; the pipeline's own previous reading of this sheet is replaced."""
+    kept; the pipeline's own previous reading of this sheet is replaced. Once the floor's schedule is read it settles
+    which overhangs are cantilevers, so the layout is read again when that changes (the job key includes it)."""
     s = db.get(Sheet, sheet_id)
     if s is None or s.sheet_type != 'beam_layout' or not s.pt_per_in:
         return
     try:
-        with job(db, 'layout', s.id, f'{s.page_hash}:v{LAYOUT_VERSION}:{s.pt_per_in:.4f}', s.project_id,
+        cants = schedule_cants(db, s)
+        sched = hashlib.sha1(repr(sorted(cants.items())).encode()).hexdigest()[:10] if cants else 'none'
+        with job(db, 'layout', s.id, f'{s.page_hash}:v{LAYOUT_VERSION}:{s.pt_per_in:.4f}:{sched}', s.project_id,
                  final=final, sheet_id=s.id):
             with fetch(storage, s.upload.storage_key) as f:
-                r = lay.read_layout(f.name, s.page_no, s.pt_per_in)
+                r = lay.read_layout(f.name, s.page_no, s.pt_per_in, cants)
             db.refresh(s)
             db.query(Member).filter(Member.sheet_id == s.id, Member.status == 'auto').delete()
             kept = {m.name for m in db.scalars(select(Member).where(Member.sheet_id == s.id, Member.kind == 'beam'))}
@@ -300,6 +328,9 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
             s.layout_note = (f'{len(names)} beams placed from {len(names | {u.name for u in r.unplaced})} labels read; '
                              f'{cants} cantilever parts; {len(r.columns)} columns; '
                              f'{sum(b.clear_source == "dimension" for b in r.beams)} spans from drawn dimensions'
+                             + (f'; {len(r.joined)} overhang{"s" if len(r.joined) != 1 else ""} joined into '
+                                f'{"their spans" if len(r.joined) != 1 else "its span"} (none in the schedule)'
+                                if r.joined else '')
                              + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
     except Skip:
         return

@@ -4,10 +4,10 @@ import shutil
 import pytest
 from sqlalchemy import select
 
-from app.db.models import Member, Sheet
+from app.db.models import BeamSpec, Member, Sheet
 from app.pipeline import geometry as g
 from app.pipeline import stages
-from app.pipeline.layout import Label, match
+from app.pipeline.layout import Beam, Label, match
 from conftest import sign_in
 from test_scale_ocr import floors, run_all  # noqa: F401 (fixture)
 from test_uploads import LAYOUT, post, proj, queued, storage  # noqa: F401 (fixtures)
@@ -94,13 +94,15 @@ def test_golden_worklounge_layout():
     assert r['beams_within_4ft'] >= 80                 # 83 of 88 when written (79 before spans ran through crossings)
     assert r['columns_matching_pilot'] == 25
     assert r['median_mid_error_in'] <= 3
-    assert r['cantilever_beams_matching_schedule'] >= 14          # 16 of 21 when written
+    assert r['cantilever_beams_matching_schedule'] >= 18          # 19 of 21 when written (B21, B88 not drawn as such)
+    assert r['cantilevers_not_in_schedule'] == []                 # the schedule settles them
+    assert r['joined_with_schedule'] == ['B5']
     assert r['floor_plate_has_curved_corner']                     # the pilot's own outline missed it
     assert 5200 <= r['floor_plate_sqft'] <= 5500                  # pilot 5,131 without the curved corner
     assert r['span_dims_read'] >= 75                              # 85 when written
     assert r['spans_from_dimension'] >= 30                        # 34 when written (most longer spans cross a beam)
-    assert r['spans_matching_workbook_or_drawn'] >= 70            # 73 of 87 when written (71 of 93, 65 of 99 before)
-    assert len(r['spans_short']) <= 10                            # 8: all but B5 are face-to-face spans the workbook took as c/c − 9"
+    assert r['spans_matching_workbook_or_drawn'] >= 72            # 74 of 87 when written (73, 71 of 93, 65 of 99 before)
+    assert len(r['spans_short']) <= 8                             # 7, all face-to-face spans the workbook took as c/c − 9"
     assert r['spans_dimension_agrees_with_geometry'] >= 0.9 * r['spans_from_dimension']
 
 
@@ -130,6 +132,22 @@ def test_layout_stage_writes_members_and_keeps_peoples_decisions(client, session
         stages.LAYOUT_VERSION -= 1
     b13s = session.scalars(select(Member).where(Member.sheet_id == s.id, Member.name == 'B13')).all()
     assert len(b13s) == 1 and b13s[0].status == 'edited'
+
+    # Once a schedule is read it settles cantilevers: B5 has none in it, so its overhang joins its span. The layout
+    # is read again because what the schedule says changed (the job key holds it); B7's cantilever stays.
+    def names():
+        return {m.name for m in session.scalars(select(Member).where(Member.sheet_id == s.id, Member.kind == 'beam'))}
+    assert {'B5-cant', 'B7-cant'} <= names()
+    b5_before = max(abs(m.x2 - m.x1) for m in session.scalars(select(Member).where(Member.sheet_id == s.id,
+                                                                                    Member.name == 'B5')))
+    for n in ('B5', 'B7', 'B7-cant'):
+        session.add(BeamSpec(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, name=n))
+    session.commit()
+    assert stages.schedule_cants(session, s)['B5'] is False
+    stages.layout(session, storage, s.id)
+    assert 'B5-cant' not in names() and 'B7-cant' in names()
+    b5 = session.scalars(select(Member).where(Member.sheet_id == s.id, Member.name == 'B5')).all()
+    assert max(abs(m.x2 - m.x1) for m in b5) > b5_before and 'overhang joined' in session.get(Sheet, s.id).layout_note
 
 
 def test_one_name_per_spot_and_doubtful_reads():
@@ -173,3 +191,41 @@ def test_a_label_just_past_the_line_end_takes_the_whole_line():
     lab = Label('HB70', False, 50.3, 95, (45, 92, 56, 98))
     b = match([lab], [main], [], PPI).beams[0]
     assert (b.p1[0], b.p2[0]) == (0, 50)
+
+
+def cant_beam(name, p1, p2):
+    return Beam(name, False, p1, p2, 9, Label(name, False, 0, 0, (0, 0, 0, 0)), 0.5, cantilever=True)
+
+
+def test_the_schedule_joins_an_overhang_it_does_not_have():
+    from app.pipeline.layout import Beam, Layout, join_overhangs
+    lab = Label('B5', False, 60, 95, (50, 92, 70, 98))
+    cols = [g.Rect(-4, 96, 4, 104, 2.0, True)]
+    crossing_tip = strip(True, 160, 50, 150)              # a beam passes right across the tip: a support
+    lay = Layout(beams=[Beam('B5', False, (0, 100), (120, 100), 9, lab, 0.8), cant_beam('B5-cant', (120, 100), (160, 100))])
+    assert join_overhangs(lay, {'B5': False}, [crossing_tip], cols, PPI) == ['B5']
+    assert [(b.name, b.p1[0], b.p2[0]) for b in lay.beams] == [('B5', 0, 160)]
+
+    # Tip on a beam that ends there (the edge beam a cantilever carries): dropped, the span stays.
+    edge = strip(True, 160, 102.7, 150)
+    lay = Layout(beams=[Beam('B5', False, (0, 100), (120, 100), 9, lab, 0.8), cant_beam('B5-cant', (120, 100), (160, 100))])
+    assert join_overhangs(lay, {'B5': False}, [edge], cols, PPI) == []
+    assert [(b.name, b.p2[0]) for b in lay.beams] == [('B5', 120)]
+
+    # The schedule has the cantilever: untouched.
+    lay = Layout(beams=[Beam('B5', False, (0, 100), (120, 100), 9, lab, 0.8), cant_beam('B5-cant', (120, 100), (160, 100))])
+    assert join_overhangs(lay, {'B5': True}, [crossing_tip], cols, PPI) == [] and len(lay.beams) == 2
+
+
+def test_overhang_past_a_column_and_beside_another_lines_label():
+    from app.pipeline.layout import add_cantilevers
+    # B87: span 0–120 ends on a column (120–136); the line's edges stop there and go on 138–170 with nothing under it.
+    span, out = strip(False, 100, 0, 120), strip(False, 100, 138, 170)
+    col_root = g.Rect(120, 96, 136, 104, 2.0, True)
+    col_far = g.Rect(-4, 96, 4, 104, 2.0, True)
+    lab = Label('B87', False, 60, 95, (50, 92, 70, 98))
+    other = Label('B56', False, 150, 107, (140, 104, 160, 110))   # 7 pt off this line, placed on its own beam
+    neighbour = strip(False, 112, 140, 200)
+    lay = match([lab, other], [span, out, neighbour], [col_root, col_far], PPI)
+    add_cantilevers(lay, [span, out, neighbour], [col_root, col_far], [lab, other], PPI)
+    assert [(b.name, b.p1[0], b.p2[0]) for b in lay.beams if b.cantilever] == [('B87-cant', 120, 170)]

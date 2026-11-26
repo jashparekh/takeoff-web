@@ -80,6 +80,12 @@ async def layout(ctx, sheet_id: str):
 async def schedule(ctx, sheet_id: str):
     await run(ctx, stages.schedule, sheet_id)
     await ctx['redis'].enqueue_job('vision', sheet_id, _job_id=f'vision:{sheet_id}')
+    # The schedule settles which overhangs on the floor's layouts are cantilevers: read them again. The layout job
+    # does nothing unless what the schedules say about cantilevers changed.
+    with session_factory()() as db:
+        layouts = stages.layout_sheets_for(db, sheet_id)
+    for lid in layouts:
+        await ctx['redis'].enqueue_job('layout', str(lid), _job_id=f'layout:{lid}:after:{sheet_id}')
 
 
 async def vision(ctx, sheet_id: str):

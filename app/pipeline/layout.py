@@ -203,6 +203,7 @@ class Layout:
     strips: list[g.Strip] = field(default_factory=list)
     edge_width: float | None = None
     dims: list = field(default_factory=list)          # dimension strings read (dimensions.Dim)
+    joined: list = field(default_factory=list)        # overhangs joined into their span (the schedule has none)
     outline: g.Outline | None = None
 
 
@@ -365,13 +366,18 @@ def add_cantilevers(lay: Layout, strips: list[g.Strip], cols: list[g.Rect], labe
                       key=lambda t: t.a)
         cur = None
         for t in same:
-            if cur and t.a - cur[3] <= gap:
+            bridged = cur and any(a - 3 <= cur[3] and b + 3 >= t.a for a, b in columns_on(t, cur[3], t.a, cols))
+            if cur and (t.a - cur[3] <= gap or bridged):          # a gap closed by a column is one line
                 cur[3] = max(cur[3], t.b)
             else:
                 cur = [vertical, t.c, t.a, t.b, t]
                 runs.append(cur)
     seen = set()
-    label_at = [(lb.vertical, lb.y if lb.vertical else lb.x, lb.x if lb.vertical else lb.y) for lb in labels]
+    # Labels that can stop an overhang: unplaced ones, or ones placed on that same line (a label placed on the next
+    # beam over is not this line's).
+    placed = {id(b.label): b for b in lay.beams}
+    label_at = [(lb.vertical, lb.y if lb.vertical else lb.x, lb.x if lb.vertical else lb.y, placed.get(id(lb)))
+                for lb in labels]
     new = []
     for vertical, c, lo_run, hi_run, s0 in runs:
         key = (vertical, round(c, 0), round(lo_run), round(hi_run))
@@ -397,7 +403,8 @@ def add_cantilevers(lay: Layout, strips: list[g.Strip], cols: list[g.Rect], labe
             out_cols = [(a, b) for a, b in columns_on(s0, x1, x2, cols) if not (a - 3 <= root <= b + 3)]
             if out_cols:
                 continue                           # something holds it up further out: not an overhang
-            if any(v == vertical and x1 + 2 < al < x2 - 2 and abs(ac - c) <= near for v, al, ac in label_at):
+            if any(v == vertical and x1 + 2 < al < x2 - 2 and abs(ac - c) <= near
+                   and (pb is None or abs((pb.p1[0] if vertical else pb.p1[1]) - c) <= 1.5) for v, al, ac, pb in label_at):
                 continue                           # another beam's label is there
             found.append((side, x1, x2, beam))
         for side, x1, x2, beam in found:
@@ -412,7 +419,66 @@ def add_cantilevers(lay: Layout, strips: list[g.Strip], cols: list[g.Rect], labe
 SPAN_AGREE_IN = 3              # drawn dimension vs measured clear span
 
 
-def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
+def supported_at(vertical: bool, c: float, at: float, strips: list[g.Strip], cols: list[g.Rect]) -> bool:
+    """A beam passing right across the line `c` at `at`, or a column there. A beam that ends on the line (T) does not
+    count: at a cantilever's tip that is the edge beam the cantilever carries."""
+    for p in strips:
+        if p.vertical != vertical and abs(p.c - at) <= p.width_pt / 2 + 2 and p.a + 6 < c < p.b - 6:
+            return True
+    return any(abs((r.cx if vertical else r.cy) - c) < 6 and
+               ((r.y0 if vertical else r.x0) - 3 <= at <= (r.y1 if vertical else r.x1) + 3) for r in cols)
+
+
+JOIN_MIN_IN = 24               # shorter overhangs are edge details, never part of a span
+
+
+def on_column(vertical: bool, c: float, at: float, cols: list[g.Rect], slack: float = 8) -> bool:
+    return any(abs((r.cx if vertical else r.cy) - c) < 6 and
+               (r.y0 if vertical else r.x0) - slack <= at <= (r.y1 if vertical else r.x1) + slack for r in cols)
+
+
+def join_overhangs(lay: Layout, cants: dict[str, bool], strips: list[g.Strip], cols: list[g.Rect],
+                   ppi: float) -> list[str]:
+    """The schedule settles cantilevers. `cants`: beam name → whether the schedule draws a cantilever part for it.
+    An overhang read off the layout for a beam the schedule shows without one is not a cantilever: if its tip sits on a
+    support, starts at a crossing beam (not a column) and is at least 2 ft, the stretch is part of the span (extended
+    to the tip); else it is dropped. Returns the
+    beams whose span was extended."""
+    joined = []
+    for c in [b for b in lay.beams if b.cantilever]:
+        base = c.name.split('-')[0]
+        if cants.get(base, True):
+            continue
+        k = 1 if c.vertical else 0
+        across = c.p1[0] if c.vertical else c.p1[1]
+        c_lo, c_hi = sorted((c.p1[k], c.p2[k]))
+        lay.beams.remove(c)
+        for b in lay.beams:
+            if b.cantilever or b.name != base or b.vertical != c.vertical or \
+                    abs((b.p1[0] if b.vertical else b.p1[1]) - across) > 1.5:
+                continue
+            lo, hi = sorted((b.p1[k], b.p2[k]))
+            if abs(hi - c_lo) <= 2:
+                root, tip = hi, c_hi
+            elif abs(lo - c_hi) <= 2:
+                root, tip = lo, c_lo
+            else:
+                continue
+            if abs(tip - root) < JOIN_MIN_IN * ppi or on_column(b.vertical, across, root, cols) or \
+                    not supported_at(b.vertical, across, tip, strips, cols):
+                break                                  # a stub, or past a column: not part of this span
+            lo, hi = min(lo, tip), max(hi, tip)
+            b.p1, b.p2 = ((across, lo), (across, hi)) if b.vertical else ((lo, across), (hi, across))
+            b.note = ' '.join(filter(None, [b.note, 'Runs on past the last crossing beam: the schedule shows no '
+                                                    'cantilever, so it is one span.']))
+            joined.append(base)
+            break
+    return joined
+
+
+def read_layout(path: str, page_no: int, pt_per_in: float, cants: dict[str, bool] | None = None) -> Layout:
+    """Beams, columns, spans and the floor plate off a beam layout. `cants` (beam → has a cantilever part), from the
+    floor's schedule when it has been read, settles which overhangs are cantilevers."""
     from .dimensions import assign, read_dims
     vec = g.read_vectors(path, page_no)
     edges = g.beam_edges(vec, pt_per_in)
@@ -422,6 +488,8 @@ def read_layout(path: str, page_no: int, pt_per_in: float) -> Layout:
     labels = read_labels(path, page_no, vec, edges.width)
     lay = match(labels, edges.strips, cols, pt_per_in)
     add_cantilevers(lay, edges.strips, cols, labels, pt_per_in)
+    if cants:
+        lay.joined = join_overhangs(lay, cants, edges.strips, cols, pt_per_in)
     for b in lay.beams:
         b.clear_in = b.geo_clear_in = clear_span_in(b, edges.strips, cols, pt_per_in)
     lettering = lettering_width(vec, edges.width)
