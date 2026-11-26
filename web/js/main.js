@@ -1120,7 +1120,8 @@ async function rvSend(body) {
     RV.picks = [];
     if (r.status === 'auto') { RV.q.items[RV.i] = r; rvShow(); return; }
     RV.q.items.splice(RV.i, 1); RV.q.checked++;
-    toast({ accepted: 'Accepted', edited: 'Saved', rejected: 'Marked not on drawing' }[r.status] || 'Saved');
+    toast(({ accepted: 'Accepted', edited: 'Saved', rejected: 'Marked not on drawing' }[r.status] || 'Saved')
+          + (r.layouts_rereading ? '. The layout is being read again: the schedule changed its cantilevers.' : ''));
     if (RV.i >= RV.q.items.length) RV.i = Math.max(0, RV.q.items.length - 1);
     rvShow();
   } catch (err) { toast(err.message); }

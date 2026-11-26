@@ -248,6 +248,7 @@ class Sheet(Base):
     scale_note: Mapped[str | None] = mapped_column(Text)
     layout_version: Mapped[int | None] = mapped_column(Integer)       # layout reader version that produced members
     layout_note: Mapped[str | None] = mapped_column(Text)             # summary: labels found, members placed
+    layout_schedule: Mapped[str | None] = mapped_column(String(16))   # schedule cantilevers it was read with (hash)
     schedule_version: Mapped[int | None] = mapped_column(Integer)     # schedule reader version that produced specs
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')

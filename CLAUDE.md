@@ -60,7 +60,9 @@ Product rules (non-negotiable):
   `read_layout(cants=)`; the layout job key holds a hash of it and the schedule job re-queues the floor's layouts): an
   overhang the schedule has no part for is joined into its span if it starts at a crossing beam, is ≥ 2 ft and its
   tip sits on a beam passing across or a column (B5), else dropped. Pilot: 19 of the schedule's 21 cantilever beams,
-  none extra (B21 and B88 are not drawn as overhangs). A change to specs in Review does not re-read the layout yet. Floor plate: every beam-edge segment at any angle within 6 ft of the
+  none extra (B21 and B88 are not drawn as overhangs). `sheets.layout_schedule` holds the hash a layout was read with;
+  a Review spec edit or added reading that changes it queues the floor's layouts after committing
+  (`review.relayout_if_needed`, response `layouts_rereading`), and the minute sweep re-queues any still stale. Floor plate: every beam-edge segment at any angle within 6 ft of the
   frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
   corner the pilot missed). `python -m tools.golden_report` compares with the pilot (83 of 88 beams within 4 ft,
   median 0.1"; 25/25 columns; spans 74 of 87 equal the workbook or the drawn 4–5" over it; the 7 short and 4 long are
