@@ -54,13 +54,17 @@ Product rules (non-negotiable):
   Labels: different names read on the same spot are settled to one (more reads, then a name not read more clearly
   elsewhere, then the longer name — B85 not B5); a label read once whose name is read clearly elsewhere is doubtful
   (confidence ≤ 0.3, noted) and takes no span on a line with clear labels. Results in `members` (sheet points); people's decisions
-  (status ≠ auto) survive re-reads. Cantilevers: a beam's line followed outward past its root column to where it runs
-  out with no further column → `B7-cant` / `-cantL` / `-cantR` (16 of the schedule's 21 cantilever beams, 6 extra;
-  confidence ≤ 0.5 so Review shows them early). Floor plate: every beam-edge segment at any angle within 6 ft of the
+  (status ≠ auto) survive re-reads. Cantilevers: a beam's line followed outward past its root (across a column gap) to where it
+  runs out with no further column and no label placed on that line → `B7-cant` / `-cantL` / `-cantR` (confidence
+  ≤ 0.5 so Review shows them early). Once the floor's schedule is read it settles them (`stages.schedule_cants` →
+  `read_layout(cants=)`; the layout job key holds a hash of it and the schedule job re-queues the floor's layouts): an
+  overhang the schedule has no part for is joined into its span if it starts at a crossing beam, is ≥ 2 ft and its
+  tip sits on a beam passing across or a column (B5), else dropped. Pilot: 19 of the schedule's 21 cantilever beams,
+  none extra (B21 and B88 are not drawn as overhangs). A change to specs in Review does not re-read the layout yet. Floor plate: every beam-edge segment at any angle within 6 ft of the
   frame, dash gaps closed, filled, traced (OpenCV) → `slab_panel` member with `points` (5,355 sq ft incl. the curved
   corner the pilot missed). `python -m tools.golden_report` compares with the pilot (83 of 88 beams within 4 ft,
-  median 0.1"; 25/25 columns; spans 73 of 87 equal the workbook or the drawn 4–5" over it; of the 8 short, all but
-  B5 — a false overhang the schedule check flags — are face-to-face spans where the workbook took the pilot's c/c − 9").
+  median 0.1"; 25/25 columns; spans 74 of 87 equal the workbook or the drawn 4–5" over it; the 7 short and 4 long are
+  face-to-face spans where the workbook took the pilot's c/c − 9").
 - `app/pipeline/schedule.py` — beam schedules (M3, OCR pass): names/dims and bar callouts are drawn in two lettering
   widths (0.48 / 0.6 pt on the pilot), each rendered alone and OCR'd (callouts: 4 passes, voted); elevations = the
   outline width whose rows sit over the most labels, split at supports; size-only labels next to a beam are its

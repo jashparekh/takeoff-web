@@ -33,10 +33,16 @@ def pilot():
     return hot, beams, cols, cants
 
 
-def report(pt_per_in: float) -> dict:
+def schedule_cants() -> dict[str, bool]:
+    """What the pilot's schedule says about cantilever parts (from inputs.json, which follows the schedule)."""
+    names = [b['name'] for b in json.loads((DATA / 'inputs.json').read_text())['beams']]
+    return {n: any(m.startswith(n + '-cant') for m in names) for n in names if '-cant' not in n}
+
+
+def report(pt_per_in: float, with_schedule: bool = True) -> dict:
     hot, truth, tcols, tcants = pilot()
     t = time.time()
-    lay = read_layout(str(SHEET), 1, pt_per_in)
+    lay = read_layout(str(SHEET), 1, pt_per_in, schedule_cants() if with_schedule else None)
     secs = time.time() - t
     names = {b.name for b in lay.beams} | {u.name for u in lay.unplaced}
     placed = {}
@@ -80,6 +86,7 @@ def report(pt_per_in: float) -> dict:
         cantilevers_same_place_as_pilot=len(cant_match),
         columns_found=len(lay.columns), columns_pilot=len(tcols), columns_matching_pilot=col_hits,
         unplaced_labels=sorted({u.name for u in lay.unplaced}),
+        joined_with_schedule=sorted(lay.joined),
         floor_plate_sqft=lay.outline.area_sqft if lay.outline else None,
         floor_plate_pilot_sqft=json.loads((DATA / 'model.json').read_text())['slab']['footprint_sqft'],
         **span_report(lay, inputs),
