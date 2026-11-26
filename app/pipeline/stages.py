@@ -34,7 +34,7 @@ from . import ocr, pdf
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
-LAYOUT_VERSION = 5               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans run through crossing beams
+LAYOUT_VERSION = 6               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans through crossings; 6: settled label names
 
 log = logging.getLogger('takeoff.pipeline')
 now = lambda: datetime.now(timezone.utc)                    # noqa: E731

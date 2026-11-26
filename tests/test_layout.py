@@ -99,7 +99,8 @@ def test_golden_worklounge_layout():
     assert 5200 <= r['floor_plate_sqft'] <= 5500                  # pilot 5,131 without the curved corner
     assert r['span_dims_read'] >= 75                              # 85 when written
     assert r['spans_from_dimension'] >= 30                        # 34 when written (most longer spans cross a beam)
-    assert r['spans_matching_workbook_or_drawn'] >= 68            # 71 of 93 when written (65 of 99 before)
+    assert r['spans_matching_workbook_or_drawn'] >= 70            # 73 of 87 when written (71 of 93, 65 of 99 before)
+    assert len(r['spans_short']) <= 10                            # 8: all but B5 are face-to-face spans the workbook took as c/c − 9"
     assert r['spans_dimension_agrees_with_geometry'] >= 0.9 * r['spans_from_dimension']
 
 
@@ -129,3 +130,46 @@ def test_layout_stage_writes_members_and_keeps_peoples_decisions(client, session
         stages.LAYOUT_VERSION -= 1
     b13s = session.scalars(select(Member).where(Member.sheet_id == s.id, Member.name == 'B13')).all()
     assert len(b13s) == 1 and b13s[0].status == 'edited'
+
+
+def test_one_name_per_spot_and_doubtful_reads():
+    from app.pipeline.layout import settle_names
+    b10 = Label('B10', False, 648, 174, (640, 171, 656, 177), reads=2)
+    b1 = Label('B1', False, 646, 174, (640, 171, 652, 177), reads=1)          # same spot, a digit dropped
+    b85, b5 = Label('B85', True, 717, 309, (714, 300, 720, 318)), Label('B5', True, 717, 309, (714, 302, 720, 316))
+    clear_b5 = Label('B5', False, 179, 110, (170, 107, 188, 113), reads=3)
+    out = settle_names([b10, b1, b85, b5, clear_b5])
+    names = sorted(lb.name for lb in out)
+    assert names == ['B10', 'B5', 'B85']                    # B1 dropped; B85 (longer, B5 read clearly elsewhere) kept
+    assert next(lb for lb in out if lb.name == 'B85').doubt == 'Also read as B5.'
+    assert next(lb for lb in out if lb.name == 'B5').doubt is None
+
+
+def test_a_doubtful_read_does_not_split_a_clear_beam():
+    main = strip(False, 100, 0, 300)
+    cross = strip(True, 100, 50, 150)
+    cols = [g.Rect(-4, 96, 4, 104, 2.0, True), g.Rect(296, 96, 304, 104, 2.0, True)]
+    good = Label('B24', False, 200, 95, (190, 92, 210, 98), reads=3)
+    bad = Label('CB1', False, 60, 95, (55, 92, 65, 98), doubt='Read once; CB1 is read clearly elsewhere.')
+    out = match([good, bad], [main, cross], cols, PPI)
+    assert [(m.name, m.p1[0], m.p2[0]) for m in out.beams] == [('B24', 0, 300)]
+    assert [u.name for u in out.unplaced] == ['CB1']
+
+
+def test_two_labels_split_at_a_crossing_beam_before_one_framing_in():
+    # T at 160 would centre the labels better (pieces 0–160, 160–300), but the beam crossing at 190 is the support.
+    main = strip(False, 100, 0, 300)
+    t_stem = strip(True, 160, 102.7, 140)
+    cross = strip(True, 190, 50, 150)
+    cols = [g.Rect(-4, 96, 4, 104, 2.0, True), g.Rect(296, 96, 304, 104, 2.0, True)]
+    a = Label('B73', False, 80, 95, (70, 92, 90, 98))
+    b = Label('B72', False, 230, 95, (220, 92, 240, 98))
+    out = match([a, b], [main, t_stem, cross], cols, PPI)
+    assert {m.name: (m.p1[0], m.p2[0]) for m in out.beams} == {'B73': (0, 190), 'B72': (190, 300)}
+
+
+def test_a_label_just_past_the_line_end_takes_the_whole_line():
+    main = strip(False, 100, 0, 50)
+    lab = Label('HB70', False, 50.3, 95, (45, 92, 56, 98))
+    b = match([lab], [main], [], PPI).beams[0]
+    assert (b.p1[0], b.p2[0]) == (0, 50)

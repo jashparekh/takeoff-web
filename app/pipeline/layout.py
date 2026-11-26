@@ -43,6 +43,7 @@ class Label:
     b_in: int | None = None  # size printed with the label, e.g. B13(9"X18")
     d_in: int | None = None
     reads: int = 1           # how many OCR passes found it
+    doubt: str | None = None # why the name may be misread (see settle_names)
 
 
 def lettering_width(vec: g.Vectors, edge_width: float) -> float | None:
@@ -132,6 +133,36 @@ def merge_labels(found: list[Label], tol: float = 10) -> list[Label]:
     return keep
 
 
+DOUBTFUL = 0.3                 # confidence cap for a label that may be misread
+
+
+def overlap(a: tuple, b: tuple) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def settle_names(labels: list[Label]) -> list[Label]:
+    """Different names read on the same spot (B10 also read as B1 and B19; B85 as B5) → one label. Prefer more reads,
+    then a name not read more clearly elsewhere, then the longer name (OCR drops a digit far more often than it adds
+    one). A label read once whose name is read more clearly elsewhere is kept but marked doubtful: it is usually
+    another beam's label misread (Review shows it early)."""
+    best_reads: dict[str, int] = defaultdict(int)
+    for lb in labels:
+        best_reads[lb.name] = max(best_reads[lb.name], lb.reads)
+    out: list[Label] = []
+    for lb in sorted(labels, key=lambda k: (-k.reads, -(best_reads[k.name] <= k.reads), -len(k.name), k.name)):
+        k = next((k for k in out if k.vertical == lb.vertical and k.name != lb.name and overlap(k.box, lb.box)), None)
+        if k is not None:
+            if lb.reads >= k.reads:
+                k.doubt = ' '.join(filter(None, [k.doubt, f'Also read as {lb.name}.']))
+            continue
+        out.append(lb)
+    for lb in out:
+        if lb.reads == 1 and best_reads[lb.name] > 1 and \
+                any(k is not lb and k.name == lb.name and k.reads > 1 for k in out):
+            lb.doubt = ' '.join(filter(None, [lb.doubt, f'Read once; {lb.name} is read clearly elsewhere.']))
+    return out
+
+
 def read_labels(path: str, page_no: int, vec: g.Vectors, edge_width: float) -> list[Label]:
     w = lettering_width(vec, edge_width)
     found: list[Label] = []
@@ -141,7 +172,7 @@ def read_labels(path: str, page_no: int, vec: g.Vectors, edge_width: float) -> l
             from .pdf import render_gray
             img, dpi = render_gray(path, page_no, dpi)
         found += ocr_labels(img, dpi)
-    return merge_labels(found)
+    return settle_names(merge_labels(found))
 
 
 # ---------- members ----------
@@ -176,7 +207,7 @@ class Layout:
 
 
 def cuts(s: g.Strip, strips: list[g.Strip], cols: list[g.Rect], ppi: float = 0.6,
-         labels: list[float] | None = None) -> tuple[list[float], list[float]]:
+         labels: list[float] | None = None) -> tuple[list[float], list[float], list[float]]:
     """Positions along strip `s` where a span may end.
     Hard: columns, and the ends of the strip.
     Soft: perpendicular beams, whether they frame in from one side (T) or pass right across (X). A beam is drawn
@@ -204,24 +235,26 @@ def cuts(s: g.Strip, strips: list[g.Strip], cols: list[g.Rect], ppi: float = 0.6
     for end in (s.a, s.b):
         if any(abs(x - end) <= 12 for x in col_at):     # the line ends on a column: supported, not an overhang
             continue
-        xs = sorted((c for c in through if OVERHANG_IN[0] * ppi <= abs(c - end) <= OVERHANG_IN[1] * ppi),
+        xs = sorted((c for c in through if s.a < c < s.b and OVERHANG_IN[0] * ppi <= abs(c - end) <= OVERHANG_IN[1] * ppi),
                     key=lambda c: abs(c - end))
         if not xs:
             continue
         root = xs[0]
         lo, hi = sorted((root, end))
-        if not any(lo + 3 < c < hi - 3 for c in inner) and not any(lo < x < hi for x in labelled):
+        if not any(lo + 3 < c < hi - 3 for c in inner) and not any(lo < x < hi + 3 for x in labelled) \
+                and not any(lo - 3 < x < hi for x in labelled if end == s.a):
             hard.add(root)
-    return sorted(hard), sorted(soft - hard)
+    return sorted(hard), sorted(soft - hard), sorted(through - hard)
 
 
 OVERHANG_IN = (12, 110)        # a cantilever past its root beam: longer than the tip's edge beam, at most ~9 ft
 
 
-def centred_cuts(inside: list, soft: list[float], a: float, b: float) -> list[float]:
+def centred_cuts(inside: list, soft: list[float], a: float, b: float, through: list[float] = ()) -> list[float]:
     """Where to split span a–b shared by different labels (`inside`, sorted along it). A label is written at the
     middle of its own span, so between each pair of neighbouring labels pick the soft cut that, over the whole span,
-    puts every label nearest the centre of its piece. Labels with no cut between them stay together."""
+    puts every label nearest the centre of its piece. A beam that crosses (X) is preferred over one that only frames
+    in (T) — the pilot splits at crossings. Labels with no cut between them stay together."""
     groups: list[list] = []                       # runs of the same name: [name, mean position]
     for along, _, lb in inside:
         if groups and groups[-1][0] == lb.name:
@@ -230,7 +263,8 @@ def centred_cuts(inside: list, soft: list[float], a: float, b: float) -> list[fl
             groups.append([lb.name, along])
     if len(groups) < 2:
         return []
-    choices = [[c for c in soft if x1 < c < x2] or [None] for (_, x1), (_, x2) in zip(groups, groups[1:])]
+    choices = [[c for c in through if x1 < c < x2] or [c for c in soft if x1 < c < x2] or [None]
+               for (_, x1), (_, x2) in zip(groups, groups[1:])]
     best = None
     for picked in itertools.product(*choices):                # few labels share a span
         bounds = [a] + [c for c in picked if c is not None] + [b]
@@ -266,7 +300,12 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
 
     for i, items in on.items():
         s = strips[i]
-        hard, soft = cuts(s, strips, cols, pt_per_in, [along for along, _, _ in items])
+        clear = [t for t in items if not t[2].doubt]
+        if clear and len(clear) < len(items):            # a doubtful read inside clear labels' line takes no span
+            out.unplaced += [lb for _, _, lb in items if lb.doubt]
+            items = clear
+        items = [(min(max(along, s.a + 0.5), s.b - 0.5), d, lb) for along, d, lb in items]   # label past the end
+        hard, soft, through = cuts(s, strips, cols, pt_per_in, [along for along, _, _ in items])
         spans: dict[tuple, list] = defaultdict(list)    # hard span → labels in it
         for along, d, lb in items:
             a = max((c for c in hard if c <= along), default=s.a)
@@ -275,7 +314,7 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
         for (a, b), inside in spans.items():
             inside.sort(key=lambda t: t[0])
             names = [lb.name for _, _, lb in inside]
-            bounds = [a] + centred_cuts(inside, soft, a, b) + [b]
+            bounds = [a] + centred_cuts(inside, soft, a, b, through) + [b]
             seen = set()
             for along, d, lb in sorted(inside, key=lambda t: t[1]):        # nearest label first
                 k = max(j for j in range(len(bounds) - 1) if bounds[j] <= along or j == 0)
@@ -288,6 +327,8 @@ def match(labels: list[Label], strips: list[g.Strip], cols: list[g.Rect], pt_per
                 note = None
                 if lb.b_in and abs(s.width_in(pt_per_in) - lb.b_in) > 1.5:
                     conf, note = min(conf, 0.4), f'Drawn {s.width_in(pt_per_in):.1f}" wide, label says {lb.b_in}".'
+                if lb.doubt:
+                    conf, note = min(conf, DOUBTFUL), ' '.join(filter(None, [note, lb.doubt]))
                 if len(set(names)) > 1 and len(bounds) - 1 < len(set(names)):
                     conf = min(conf, 0.5)
                     note = note or 'Shares a span with another label and no support between them was found.'

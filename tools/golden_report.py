@@ -92,7 +92,11 @@ def span_report(lay, inputs) -> dict:
     The workbook is 4–5" under the drawn dimension on many beams (no rule found); the drawn value is what counts."""
     wb = {b['name']: b['clear_in'] for b in inputs['beams']}
     dim = [b for b in lay.beams if b.clear_source == 'dimension']
-    plain = [b for b in lay.beams if not b.cantilever and b.name in wb]
+    one: dict = {}                                   # one per name: the most confident (misread copies are doubtful)
+    for b in lay.beams:
+        if not b.cantilever and b.name in wb and (b.name not in one or b.confidence > one[b.name].confidence):
+            one[b.name] = b
+    plain = list(one.values())
     return dict(
         span_dims_read=len(lay.dims),
         spans_from_dimension=len(dim),
