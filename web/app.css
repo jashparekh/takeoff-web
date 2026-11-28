@@ -319,3 +319,15 @@ table.bars td{padding:3px 4px}
 .run-values{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 24px;max-height:320px;overflow:auto;padding:8px;background:var(--sunk);border-radius:8px}
 .run-values h3{margin:8px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 .run-values .kv{display:flex;justify-content:space-between;gap:12px;padding:1px 0}
+
+/* Issues: done ones dimmed; the consultant question list, printable on its own */
+.iss.done{opacity:.65}
+.iss .acts{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.qlist ol.qs{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+@media print{
+  body.printing-q *{visibility:hidden}
+  body.printing-q #qPrint, body.printing-q #qPrint *{visibility:visible}
+  body.printing-q #qPrint{position:absolute;left:0;top:0;width:100%;border:none;box-shadow:none;background:#fff;color:#000}
+  body.printing-q #qPrint .muted{color:#444}
+  body.printing-q .noprint{display:none}
+}

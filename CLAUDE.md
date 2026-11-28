@@ -27,7 +27,7 @@ Product rules (non-negotiable):
   `POST /api/projects/{pid}/calculate {overrides}` (what-if, never saved: engine + notebook comparison + auto
   issues; 409 until a floor is measured), `GET /drawings/{pid}/{name}.svg`. Drawings and `model.json` are still read from `app/data/<slug>/`
   until uploads store them (M1); `model.json` is cached — restart after changing it.
-- `app/api/compare.py` — notebook comparison and automatic issues.
+- `app/api/compare.py` — notebook comparison (the issues raised from it are checks).
 - `app/api/uploads.py` — `POST /api/projects/{pid}/uploads` (editor; multipart `files`; checks size and `%PDF-` only,
   never opens the PDF; same SHA-256 → existing upload), `GET …/uploads`, `GET …/sheets`, `GET …/sheets/{id}/thumb.png|
   display.png` (302 to a 10-minute storage link), `PATCH …/sheets/{id}` (editor: `sheet_type`, `floor_id`; marks the sheet
@@ -96,9 +96,14 @@ Product rules (non-negotiable):
   that disagrees with the measured one by > 3" lowers confidence and is noted. Pilot: 85 dimensions, 49 beams spanned
   from them, 47 agree with the geometry within 1". Drawn dimensions count (Jash, Nov 2026); the pilot workbook is
   4–5" under the drawn span on 16 beams (B6, B12, B14…; no rule found) and counts some beams through a support the
-  layout splits (B13, B24…), so only ~20% of spans are within 1" of it. Review takes a typed span (`clear_in`, ft-in). `services/checks.py`: size conflicts (B5), layout beams without a
-  schedule reading and vice versa, layout cantilevers the schedule doesn't have → Issues (rule `check_*`), re-run
-  after stages and Review edits. Review also lists schedule readings with a bar editor (`PATCH …/specs/{id}`,
+  layout splits (B13, B24…), so only ~20% of spans are within 1" of it. Review takes a typed span (`clear_in`, ft-in). `services/checks.py` (M4 PR 3) is the rule registry: drawings (size conflict, skipping misread labels,
+  cantilever parts and two-depth beams; layout beam without schedule and vice versa; doubtful cantilevers; numbering
+  gaps incl. HB numbers), schedule (repeated elevations, counted once), values (concrete grade, cover and Ld not
+  stated, unless a value's source starts "Read from"), run (extra top length not drawn; site count ±25%). Issues are
+  upserted by code; only evaluated rule groups remove their open Issues; answered / resolved ones keep their status
+  (`PATCH /api/projects/{pid}/issues/{code} {status}`). Run after stages, Review and Values edits, and on saving a run
+  (and the pilot import's run). Fresh pilot upload: finds I1–I5 itself (I6 needs slab sheets, M5) plus B49, B55, B83,
+  B90 size differences. Review also lists schedule readings with a bar editor (`PATCH …/specs/{id}`,
   `POST …/sheets/{id}/specs`). `tests/test_acceptance.py`: upload → review via the API → inputs equal `inputs.json`
   and 7,744 kg (review effort printed: mostly spans and bars).
 - Values we need (M4 PR 1): `app/services/values.py` is the registry of every value the calculation uses (label,
@@ -108,6 +113,8 @@ Product rules (non-negotiable):
   range-checked; changing a value clears its confirmation unless ticked again; corrections `value:<key>`). Engine
   conventions are values with today's defaults in `engine.CONVENTIONS` (`extra_top_frac` ⅓ — the L/3 fallback,
   `stirrup_hook_d` 10, `cant_hook_d` 12), so pinned totals are unchanged. Frontend `#p/<slug>/values` with a nav count;
+  Issues view reads stored issues (no run needed): Open / All, status buttons, "Questions for the consultant" (copy,
+  print to PDF);
   the Assumptions view stays a browser-only what-if.
 - Runs (M4 PR 2): `app/api/runs.py`. `POST /api/projects/{pid}/runs {checked, note?}` (editor) → 409
   `{message, missing[]}` while `blockers(p)` is non-empty (values still to confirm; anything `build_inputs` reports
@@ -115,7 +122,7 @@ Product rules (non-negotiable):
   confirmation), engine version and results into `runs`. `GET …/runs`, `GET …/runs/latest` (results + site check
   from `site_takeoffs`). `GET /api/projects/{pid}` carries `latest_run` (`current` = calculating now gives the same
   totals and per-beam steel) and `blockers`. The frontend shows results from the latest run (views need a run, not
-  just `ready`); `POST …/calculate` stays the never-saved what-if. Overview: Calculate panel (disabled with the
+  just `ready`); `POST …/calculate` stays the never-saved what-if (no automatic issues any more: those are checks). Overview: Calculate panel (disabled with the
   blocker list) → values summary + tick + note → saved run. The pilot import's run is shown until a new one.
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D

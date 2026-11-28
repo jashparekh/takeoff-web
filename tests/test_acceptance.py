@@ -55,7 +55,7 @@ def test_upload_review_calculate_worklounge(client, session, storage, queued):  
     assert r.status_code == 409 and 'still to check in Review' in r.json()['detail']
     issues = {i.code: i for i in session.scalars(select(Issue).where(Issue.project_id == p.id))}
     assert 'X-SIZE-B5' in issues and '9"×24"' in issues['X-SIZE-B5'].title           # the B5 conflict on record
-    assert any(i.rule == 'schedule_repeat' and 'B68' in i.detail for i in issues.values())
+    assert any(i.rule == 'check_repeat' and 'B68' in i.detail for i in issues.values())
 
     # Review, as a person would.
     edits = dict(accepted=0, corrected=0, added=0, rejected=0)
@@ -125,4 +125,14 @@ def test_upload_review_calculate_worklounge(client, session, storage, queued):  
     r = client.post('/api/projects/worklounge/runs', json=dict(checked=True))
     assert r.status_code == 201 and r.json()['run']['current']
     assert round(r.json()['results']['summary']['beam_steel_kg']) == 7744
+    # The checks find the recorded drawing issues themselves (I1–I5; I6 needs the slab sheets, M5): grade, cover and
+    # lap not stated, B5's size, the numbering gaps, the repeated elevations; plus B55, B83 and B90 (layout and
+    # schedule sizes really differ on the drawings; the pilot's hand list has only B5) and B49 (layout 9"X21", schedule
+    # 9"X21"/24" entered as the average 22.5" with no second depth).
+    found = {i['id']: i for i in client.get('/api/projects/worklounge').json()['issues'] if i['auto']}
+    assert {'X-STATED-GRADE', 'X-STATED-COVER', 'X-SIZE-B5', 'X-NUMBERING', 'REP-MC-SD-06-02'} <= set(found)
+    assert found['X-NUMBERING']['title'] == 'Beam numbers B42, B46, B51, B89 do not appear'
+    assert {k for k in found if k.startswith('X-SIZE-')} == {'X-SIZE-B5', 'X-SIZE-B49', 'X-SIZE-B55', 'X-SIZE-B83', 'X-SIZE-B90'}
+    assert found['X-STATED-COVER']['assumption'] == '25 mm cover, Ld = 50d'
+    assert 'X-ASSUMED-TOP' in found and 'X-SITE' in found                 # from the saved run
     print('\nReview effort on Work Lounge:', edits)

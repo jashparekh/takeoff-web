@@ -16,7 +16,8 @@ from ..db.models import Project, Run, SiteTakeoff, User
 from ..engine import Calc
 from ..services.inputs_builder import NotReady, build_inputs, engine_version
 from ..services.values import ensure_values, needed
-from .compare import auto_issues, notebook_compare
+from ..services import checks
+from .compare import notebook_compare
 
 router = APIRouter()
 Viewer = Annotated[Project, Depends(project_role('viewer'))]
@@ -72,7 +73,6 @@ def with_site_check(db, p: Project, results: dict) -> dict:
                    .order_by(SiteTakeoff.created_at.desc()).limit(1))
     r = dict(results)
     r['notebook'] = notebook_compare(nb.data_json if nb else None, r)
-    r['auto_issues'] = auto_issues(r, r['notebook'])
     return r
 
 
@@ -110,4 +110,6 @@ def create_run(p: Editor, req: RunIn, user: CurrentUser, db: Db):
               note=req.note, created_by=user.id)
     db.add(run)
     db.flush()
-    return dict(run=run_meta(db, p, run), results=with_site_check(db, p, run.results_json))
+    results = with_site_check(db, p, run.results_json)
+    checks.run(db, p.id, run.results_json, results['notebook'])      # issues found from the results
+    return dict(run=run_meta(db, p, run), results=results)

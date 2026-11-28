@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..auth.deps import CurrentUser, Db, project_role
 from ..db.models import Correction, Project, User
+from ..services import checks
 from ..services.values import BY_KEY, ensure_values, needed
 
 router = APIRouter()
@@ -76,4 +77,5 @@ def put_values(p: Editor, req: ValuesIn, user: CurrentUser, db: Db):
             db.add(Correction(project_id=p.id, field=f'value:{a.key}:confirmed', new_value=f'{a.value:g}',
                               user_id=user.id))
     db.flush()
+    checks.run(db, p.id)                          # an issue's "using for now" follows the value
     return values_payload(db, p)
