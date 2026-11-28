@@ -24,8 +24,8 @@ Product rules (non-negotiable):
 - `app/api/projects.py` — projects from the database, all behind sign-in: `GET /api/projects` (the user's projects,
   totals from the latest saved run), `POST /api/projects` (name, client, city, buildings → floors; creator is owner),
   `GET /api/projects/{pid}` (meta, role, ready, buildings, assumptions, issues, model, beams_input),
-  `POST /api/projects/{pid}/calculate {overrides}` (engine + notebook comparison + auto issues; 409 until a floor is
-  measured), `GET /drawings/{pid}/{name}.svg`. Drawings and `model.json` are still read from `app/data/<slug>/`
+  `POST /api/projects/{pid}/calculate {overrides}` (what-if, never saved: engine + notebook comparison + auto
+  issues; 409 until a floor is measured), `GET /drawings/{pid}/{name}.svg`. Drawings and `model.json` are still read from `app/data/<slug>/`
   until uploads store them (M1); `model.json` is cached — restart after changing it.
 - `app/api/compare.py` — notebook comparison and automatic issues.
 - `app/api/uploads.py` — `POST /api/projects/{pid}/uploads` (editor; multipart `files`; checks size and `%PDF-` only,
@@ -108,7 +108,15 @@ Product rules (non-negotiable):
   range-checked; changing a value clears its confirmation unless ticked again; corrections `value:<key>`). Engine
   conventions are values with today's defaults in `engine.CONVENTIONS` (`extra_top_frac` ⅓ — the L/3 fallback,
   `stirrup_hook_d` 10, `cant_hook_d` 12), so pinned totals are unchanged. Frontend `#p/<slug>/values` with a nav count;
-  the Assumptions view stays a browser-only what-if. Runs gated on confirmation come in M4 PR 2.
+  the Assumptions view stays a browser-only what-if.
+- Runs (M4 PR 2): `app/api/runs.py`. `POST /api/projects/{pid}/runs {checked, note?}` (editor) → 409
+  `{message, missing[]}` while `blockers(p)` is non-empty (values still to confirm; anything `build_inputs` reports
+  as left in Review), 422 without the "I have checked these" tick; else freezes inputs (incl. assumptions with their
+  confirmation), engine version and results into `runs`. `GET …/runs`, `GET …/runs/latest` (results + site check
+  from `site_takeoffs`). `GET /api/projects/{pid}` carries `latest_run` (`current` = calculating now gives the same
+  totals and per-beam steel) and `blockers`. The frontend shows results from the latest run (views need a run, not
+  just `ready`); `POST …/calculate` stays the never-saved what-if. Overview: Calculate panel (disabled with the
+  blocker list) → values summary + tick + note → saved run. The pilot import's run is shown until a new one.
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).

@@ -17,7 +17,8 @@ async function api(path, body, method = 'POST') {
   if (r.status === 401 && !path.startsWith('/api/auth/')) { S.me = null; go('#signin'); throw new ApiError(401, 'Sign in required'); }
   if (!r.ok) {
     let d; try { d = (await r.json()).detail; } catch { }
-    throw new ApiError(r.status, typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg).join('; ') : null);
+    throw new ApiError(r.status, typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg).join('; ')
+      : d?.message ? [d.message, ...(d.missing || [])].join(' ') : null);
   }
   return r.status === 204 ? null : r.json();
 }
@@ -33,15 +34,17 @@ async function boot() {
 async function openProject(pid) {
   if (PID === pid && S.project) return;
   PID = pid; P = `#p/${encodeURIComponent(pid)}/`;
-  S.project = S.calc = S.base = null;
+  S.project = S.calc = S.base = S.run = null;
   S.overrides = store.get(`ovr:${PID}`, {});
   const project = await api(`/api/projects/${PID}`);
   if (PID !== pid) return;
   S.project = project;
   S.sheets = Object.fromEntries((project.meta.sheets || []).map(s => [s.id, s]));
-  if (project.ready) {
-    S.base = await api(`/api/projects/${PID}/calculate`, { overrides: {} });
-    S.calc = Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : S.base;
+  if (project.latest_run) {                  // results come from the latest saved run; the live calculation is the what-if
+    const r = await api(`/api/projects/${PID}/runs/latest`);
+    if (PID !== pid) return;
+    S.base = r.results; S.run = r.run;
+    S.calc = project.ready && Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : S.base;
     index();
   }
 }
@@ -51,7 +54,7 @@ function shell(mode) {
   document.body.dataset.mode = mode;         // 'bare' (sign-in), 'home' (projects), 'project'
   $('#nav').querySelectorAll('a').forEach(a => {
     a.href = P + a.dataset.v;
-    a.hidden = mode !== 'project' || (NEEDS_CALC.has(a.dataset.v) && !S.project?.ready && !(a.dataset.v === 'model' && S.project?.model));
+    a.hidden = mode !== 'project' || (NEEDS_CALC.has(a.dataset.v) && !S.base && !(a.dataset.v === 'model' && S.project?.model));
   });
   const m = S.project?.meta;
   $('#projName').hidden = mode !== 'project';
@@ -85,11 +88,11 @@ async function route() {
     }
     if (mine !== routing) return;
   }
-  if (!PROJECT_VIEWS.includes(v) || (NEEDS_CALC.has(v) && !S.project.ready && !(v === 'model' && S.project.model))) return go(P + 'overview', true);
+  if (!PROJECT_VIEWS.includes(v) || (NEEDS_CALC.has(v) && !S.base && !(v === 'model' && S.project.model))) return go(P + 'overview', true);
   S.view = v;
   shell('project');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, values, assumptions, upload, review };
+  const views = { overview: S.base ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, values, assumptions, upload, review };
   views[v](...rest);
   if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
@@ -222,12 +225,46 @@ function setup() {
         <td>${esc(f.name)}</td><td class="r mono nowrap">${f.level_m == null ? '<span class="muted">not given</span>' : `${fx(f.level_m, 2)} m`}</td><td class="r mono">${f.typical_count}</td>
         <td>${f.measured ? 'Read' : '<span class="muted">Not yet</span>'}</td></tr>`).join('')).join('')}
       </tbody></table></div></section>
+    ${S.project.ready || S.project.blockers?.length ? runPanel() : ''}
     <section class="panel pad stack"><h2>Next</h2><ol class="flow small">
       <li>Add the structural drawings for each floor: beam layout, beam schedules, slab layouts.</li>
       <li>Check what was read, and answer the values the drawings don't give.</li>
       <li>Quantities, bar schedules and costs appear here with the working for every number.</li>
     </ol><div><a class="btn pri" href="${P}upload">Add drawings</a></div></section>
   </div>`;
+}
+
+/* Calculate: a saved run, refused until every value is confirmed and Review is done, after a person's tick. */
+function runPanel() {
+  const p = S.project, r = S.run, edit = p.role !== 'viewer', left = p.blockers || [];
+  const when = r ? new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const status = r ? `<div>Results from the calculation of ${esc(when)}${r.by ? ` by ${esc(r.by)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}.</div>
+      ${r.current ? '' : '<div class="warn-text">Out of date: the drawings, Review or values have changed since. Calculate again to update.</div>'}`
+    : '<div>Not calculated yet.</div>';
+  const todo = left.length ? `<div class="small"><b>Before calculating:</b><ul>${left.map(b => `<li>${esc(b)}${/Values we need/.test(b) ? ` · <a href="${P}values">Values we need</a>` : /Review/.test(b) ? ` · <a href="${P}review">Review</a>` : ''}</li>`).join('')}</ul></div>` : '';
+  setTimeout(() => $('#runGo')?.addEventListener('click', runConfirm));
+  return `<section class="panel pad stack run-panel" id="runPanel">${status}${todo}
+    ${edit ? `<div class="row"><button class="btn pri" id="runGo" ${left.length ? 'disabled' : ''}>Calculate</button>${left.length ? '<span class="small muted">Available when the list above is done.</span>' : ''}</div><div id="runConfirm"></div>` : ''}
+  </section>`;
+}
+async function runConfirm() {
+  const box = $('#runConfirm'), go = $('#runGo'); go.disabled = true;
+  let d; try { d = await api(`/api/projects/${encodeURIComponent(PID)}/values-needed`); } catch (err) { go.disabled = false; toast(err.message); return; }
+  const fmt = v => `${+v.value.toPrecision(6)}${v.unit ? ` ${esc(v.unit)}` : ''}`;
+  box.innerHTML = `<form id="runForm" class="stack small"><div><b>The calculation will use these values.</b> Change any in <a href="${P}values">Values we need</a>.</div>
+    <div class="run-values">${d.groups.map(g => `<div><h3>${esc(g)}</h3>${d.values.filter(v => v.group === g).map(v => `<div class="kv"><span>${esc(v.label)}</span><span class="mono">${fmt(v)}</span></div>`).join('')}</div>`).join('')}</div>
+    <label><input type="checkbox" name="checked" required> I have checked these values and the beams in Review</label>
+    <label class="stack">Note (optional)<input class="f" name="note" maxlength="500" placeholder="e.g. after consultant's reply on cover"></label>
+    <div class="row"><button class="btn pri">Calculate and save</button><button type="button" class="btn" id="runCancel">Cancel</button></div></form>`;
+  $('#runCancel').addEventListener('click', () => { box.innerHTML = ''; go.disabled = false; });
+  $('#runForm').addEventListener('submit', async e => {
+    e.preventDefault(); const f = e.target, btn = f.querySelector('.pri'); btn.disabled = true;
+    try {
+      await api(`/api/projects/${encodeURIComponent(PID)}/runs`, { checked: f.checked.checked, note: f.note.value.trim() || null });
+      toast('Calculated and saved');
+      const pid = PID; PID = null; S.project = null; await openProject(pid); route();
+    } catch (err) { btn.disabled = false; toast(err.message); }
+  });
 }
 
 function index() {
@@ -277,7 +314,7 @@ function overview() {
   const nb = S.calc.notebook?.totals;
   const open = S.issues.filter(i => i.severity !== 'low');
   main.innerHTML = header(esc(S.project.meta.name), `${esc(S.project.meta.scope)} · ${S.members.length} beams · ${esc(S.project.meta.status)}`,
-    `<a class="btn" href="${P}drawings">Open drawings</a><a class="btn pri" href="${P}beams">Beam by beam</a>`) + kpis() + `
+    `<a class="btn" href="${P}drawings">Open drawings</a><a class="btn pri" href="${P}beams">Beam by beam</a>`) + runPanel() + kpis() + `
   <div class="grid g-main">
     <div class="stack">
       <section class="panel"><div class="hd"><h2>Steel by bar size</h2><span class="muted small">kg · rates ${esc('₹/kg')} incl. Fe550 premium</span></div>
@@ -706,7 +743,9 @@ function assumptions() {
 }
 async function recalc() {
   store.set(`ovr:${PID}`, S.overrides);
-  S.calc = Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : S.base;
+  try {
+    S.calc = Object.keys(S.overrides).length ? await api(`/api/projects/${PID}/calculate`, { overrides: S.overrides }) : S.base;
+  } catch (err) { toast(`What-if not available: ${err.message}`); S.overrides = {}; store.set(`ovr:${PID}`, {}); S.calc = S.base; }
   index();
 }
 
