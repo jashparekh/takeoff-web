@@ -148,7 +148,7 @@ Product rules (non-negotiable):
   116 callouts, 104 groups, 119 of the 123 bar marks (checked on overlays: lines, marks and bars match the drawing);
   top 1,087 vs 1,207 kg averaged, distribution 656 vs 1,009, slab 3,362 vs 3,894 (−13.7%): the workbook assumed 2'-6"
   extensions both sides of every span beam (four distribution bars a side); drawn they are mostly 2'-0", only where
-  called out, one side at edge beams.
+  called out, one side at edge beams. Decision (Jash, Nov 2026): the slab counts as drawn, not the workbook average.
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
