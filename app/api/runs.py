@@ -17,6 +17,7 @@ from ..engine import Calc
 from ..services.inputs_builder import NotReady, build_inputs, engine_version
 from ..services.values import ensure_values, needed
 from ..services import checks
+from ..services.diff import compare
 from .compare import notebook_compare
 
 router = APIRouter()
@@ -56,13 +57,13 @@ def is_current(p: Project, run: Run) -> bool:
         return False
 
 
-def run_meta(db, p: Project, run: Run | None) -> dict | None:
+def run_meta(db, p: Project, run: Run | None, check: bool = True) -> dict | None:
     if run is None:
         return None
     by = db.get(User, run.created_by).email if run.created_by else None
     s = run.results_json['summary']
     return dict(id=str(run.id), created_at=run.created_at.isoformat(), by=by, note=run.note,
-                engine_version=run.engine_version, current=is_current(p, run),
+                engine_version=run.engine_version, current=is_current(p, run) if check else None,
                 steel_t=s['steel_with_wastage_kg'] / 1000, concrete_m3=s['concrete_m3'],
                 per_sqft=s.get('total_per_sqft'))
 
@@ -79,7 +80,7 @@ def with_site_check(db, p: Project, results: dict) -> dict:
 @router.get('/api/projects/{pid}/runs')
 def list_runs(p: Viewer, db: Db):
     runs = db.scalars(select(Run).where(Run.project_id == p.id).order_by(Run.created_at.desc())).all()
-    return [run_meta(db, p, r) | dict(current=None) for r in runs]
+    return [run_meta(db, p, r, check=False) for r in runs]
 
 
 @router.get('/api/projects/{pid}/runs/latest')
@@ -113,3 +114,23 @@ def create_run(p: Editor, req: RunIn, user: CurrentUser, db: Db):
     results = with_site_check(db, p, run.results_json)
     checks.run(db, p.id, run.results_json, results['notebook'])      # issues found from the results
     return dict(run=run_meta(db, p, run), results=results)
+
+
+def own_run(db, p: Project, run_id: str) -> Run:
+    import uuid
+    try:
+        r = db.get(Run, uuid.UUID(run_id))
+    except ValueError:
+        r = None
+    if r is None or r.project_id != p.id:
+        raise HTTPException(404, 'No such calculation.')
+    return r
+
+
+@router.get('/api/projects/{pid}/runs/{a}/diff/{b}')
+def diff_runs(p: Viewer, a: str, b: str, db: Db):
+    """What changed from calculation `a` to calculation `b`: totals, steel by bar size with cost, beams added /
+    removed / changed (with why), slab by part, values changed."""
+    ra, rb = own_run(db, p, a), own_run(db, p, b)
+    return dict(a=run_meta(db, p, ra, check=False), b=run_meta(db, p, rb, check=False),
+                **compare(ra, rb))
