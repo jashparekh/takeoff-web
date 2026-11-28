@@ -20,6 +20,7 @@ from ..db.models import Building, Floor, Issue, Project, ProjectMember, Run, Sit
 from ..services.inputs_builder import NotReady, assumptions_list, build_inputs, measured_floors
 from ..engine import Calc
 from ..services.model_builder import build_model
+from ..services.values import ensure_values, needed
 from .compare import auto_issues, notebook_compare
 
 DATA = Path(__file__).parents[1] / 'data'
@@ -124,16 +125,20 @@ def create_project(req: ProjectIn, user: CurrentUser, db: Db):
     db.add(p)
     db.flush()
     db.add(ProjectMember(project_id=p.id, user_id=user.id, role='owner'))
+    ensure_values(p)
     return dict(id=p.slug)
 
 
 @router.get('/api/projects/{pid}')
 def get_project(p: Viewer, user: CurrentUser, db: Db):
+    if ensure_values(p):                     # projects made before the registry, or a value added to it since
+        db.flush()
     try:
         beams, ready, not_ready = build_inputs(p)['beams'], True, None
     except NotReady as e:
         beams, ready, not_ready = [], False, str(e)
     return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, not_ready=not_ready, buildings=buildings(p),
+                values_needed=len(needed(p)),
                 assumptions=assumptions_list(p), issues=[issue_dict(i) for i in p.issues],
                 model=build_model(db, p) or model_file(p.slug), beams_input=beams)
 

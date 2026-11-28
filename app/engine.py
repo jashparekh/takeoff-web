@@ -34,10 +34,19 @@ class Step:
                     value=round(self.value, 4), unit=self.unit)
 
 
+# Detailing conventions, as project values (plan M4 step 3). These are the defaults when a project has not set them,
+# so older inputs (the pinned pilot) calculate exactly as before.
+CONVENTIONS = dict(
+    extra_top_frac=1 / 3,         # extra top bar into the span when no length is drawn: L/3
+    stirrup_hook_d=10,            # 135° stirrup hook: 10d each (two hooks), less 3 × 2d for the bends
+    cant_hook_d=12,               # cantilever top and bottom bar end hook: 12d
+)
+
+
 class Calc:
     def __init__(self, inputs: dict, overrides: dict | None = None):
         self.inputs = inputs
-        self.a = {x['key']: x['value'] for x in inputs['assumptions']}
+        self.a = {**CONVENTIONS, **{x['key']: x['value'] for x in inputs['assumptions']}}
         if overrides:
             for k, v in overrides.items():
                 if k in self.a and v is not None:
@@ -51,18 +60,20 @@ class Calc:
         cant = beam['kind'] == 'C'
         if role in ('Top through', 'Top main'):
             if cant:
-                ln = 2 * L + b + 12 * d
-                fm, wk = "2 × L + b + 12d", f"2 × {f(L)} + {f(b)} + 12 × {d}"
-                why = "Cantilever top bar: runs the overhang, the support, and an equal length back into the span, plus a 12d hook."
+                h = a['cant_hook_d']
+                ln = 2 * L + b + h * d
+                fm, wk = f"2 × L + b + {h:g}d", f"2 × {f(L)} + {f(b)} + {h:g} × {d}"
+                why = f"Cantilever top bar: runs the overhang, the support, and an equal length back into the span, plus a {h:g}d hook."
             else:
                 ln = L + 2 * a['ld_factor'] * d
                 fm, wk = "L + 2 × Ld,  Ld = k·d", f"{f(L)} + 2 × {a['ld_factor']:g} × {d}"
                 why = "Continuous top bar: clear span plus a development length into the next span at each end."
         elif role == 'Bottom through':
             if cant:
-                ln = L + b + 12 * d
-                fm, wk = "L + b + 12d", f"{f(L)} + {f(b)} + 12 × {d}"
-                why = "Cantilever bottom bar: overhang plus support width plus a 12d hook."
+                h = a['cant_hook_d']
+                ln = L + b + h * d
+                fm, wk = f"L + b + {h:g}d", f"{f(L)} + {f(b)} + {h:g} × {d}"
+                why = f"Cantilever bottom bar: overhang plus support width plus a {h:g}d hook."
             else:
                 ln = L + 2 * a['bot_anch_mm']
                 fm, wk = "L + 2 × anchorage", f"{f(L)} + 2 × {a['bot_anch_mm']:g}"
@@ -77,9 +88,11 @@ class Calc:
                 fm, wk = "drawn length + b/2", f"{f(into)} + {f(b)}/2"
                 why = "Extra top bar over the support, length as drawn on the elevation, plus half the support."
             else:
-                into = L / 3
-                fm, wk = "L/3 + b/2", f"{f(L)}/3 + {f(b)}/2"
-                why = "Extra top bar over the support: L/3 into the span (no length drawn), plus half the support."
+                k = a['extra_top_frac']
+                into = k * L
+                share = 'L/3' if abs(k - 1 / 3) < 1e-9 else f'{k:g}L'
+                fm, wk = f"{share} + b/2", (f"{f(L)}/3 + {f(b)}/2" if share == 'L/3' else f"{k:g} × {f(L)} + {f(b)}/2")
+                why = f"Extra top bar over the support: {share} into the span (no length drawn), plus half the support."
             ln = into + b / 2
         else:
             raise ValueError(role)
@@ -104,14 +117,15 @@ class Calc:
             nos = 2 * n1 + n2 + 1
             nf = "2 × ⌈(L/3) / s_end⌉ + ⌈(L/3) / s_mid⌉ + 1"
             nw = f"2 × ⌈{z:.1f}″ / {se}″⌉ + ⌈{z:.1f}″ / {sm}″⌉ + 1 = 2 × {n1} + {n2} + 1"
-        cut = 2 * (b - 2 * c) + 2 * (D - 2 * c) + 14 * d
+        h = a['stirrup_hook_d']
+        cut = 2 * (b - 2 * c) + 2 * (D - 2 * c) + (2 * h - 6) * d
         kg = nos * cut / 1000 * unit_wt(d)
         return dict(role='Stirrups', nos=nos, dia=d, cut_mm=round(cut, 1), total_m=round(nos * cut / 1000, 3), kg=round(kg, 3),
                     spacing=dict(end_in=se, mid_in=sm),
                     why="Two-legged closed stirrups with 135° hooks; closer spacing over the end thirds of the span.",
                     steps=[Step('Number', nf, nw, nos, 'nos').json(),
-                           Step('Cut length', "2(b − 2c) + 2(D − 2c) + 2 × 10d − 3 × 2d",
-                                f"2({f(b, 1)} − {2 * c:g}) + 2({f(D, 1)} − {2 * c:g}) + {20 * d} − {6 * d}", cut, 'mm').json(),
+                           Step('Cut length', f"2(b − 2c) + 2(D − 2c) + 2 × {h:g}d − 3 × 2d",
+                                f"2({f(b, 1)} − {2 * c:g}) + 2({f(D, 1)} − {2 * c:g}) + {2 * h * d:g} − {6 * d}", cut, 'mm').json(),
                            Step('Weight', 'nos × cut length × d²/162', f"{nos} × {cut / 1000:.3f} m × {unit_wt(d):.3f} kg/m", kg, 'kg').json()])
 
     def beam(self, beam: dict) -> dict:

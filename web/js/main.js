@@ -8,8 +8,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let PID = null, P = '#';          // current project slug, and the hash prefix for its views: #p/<slug>/
 const S = { me: undefined, project: null, calc: null, base: null, overrides: {}, viewers: [] };
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
-const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'assumptions', 'upload', 'review'];
-const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review'].includes(v)));
+const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'values', 'assumptions', 'upload', 'review'];
+const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review', 'values'].includes(v)));
 
 class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
 async function api(path, body, method = 'POST') {
@@ -59,7 +59,9 @@ function shell(mode) {
   const who = S.me ? `<div class="acct"><div>${esc(S.me.email)}</div><button class="link" id="signout">Sign out</button></div>` : '';
   $('#sideFoot').innerHTML = (mode === 'project' && m ? `<div class="pmeta">${[m.consultant, m.revision].filter(Boolean).map(esc).join(' · ')}<br>${esc(m.status)}<hr></div>` : '') + who;
   $('#signout')?.addEventListener('click', signOut);
+  valuesBadge(S.project?.values_needed);
 }
+function valuesBadge(n) { const c = $('#valuesCount'); if (c) { c.hidden = !n; c.textContent = n || ''; } }
 
 let routing = 0;
 async function route() {
@@ -87,7 +89,7 @@ async function route() {
   S.view = v;
   shell('project');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, assumptions, upload, review };
+  const views = { overview: S.project.ready ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, values, assumptions, upload, review };
   views[v](...rest);
   if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
@@ -631,6 +633,52 @@ function notebook() {
     <tr class="tot"><td>Pages 2+ (B36–B93)</td><td></td><td class="num">${fx(t.page2.theirs)}</td><td class="num">${fx(t.page2.ours)}</td><td class="num up">+${fx(t.page2.theirs - t.page2.ours)}</td><td colspan="2"></td></tr>
   </tbody></table></div></section>`;
   main.querySelector('tbody').addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) location.hash = P + 'beam/' + tr.dataset.n; });
+}
+
+/* ---------- values we need ---------- */
+const VALUE_STEP = u => (u === 'fraction' || /× clear span/.test(u || '')) ? '0.01' : 'any';
+async function values() {
+  main.innerHTML = '<div class="loading">Loading values…</div>';
+  let d;
+  try { d = await api(`/api/projects/${encodeURIComponent(PID)}/values-needed`); } catch (err) { main.innerHTML = header('Values we need', esc(err.message)); return; }
+  const edit = S.project.role !== 'viewer';
+  const left = d.needed;
+  S.project.values_needed = left; valuesBadge(left);
+  main.innerHTML = header('Values we need',
+    left ? `${left} value${left === 1 ? '' : 's'} the drawings don't give still need${left === 1 ? 's' : ''} a person's check. Nothing is calculated from uploaded drawings until all are confirmed.`
+         : 'All values are confirmed.',
+    edit ? `<button class="btn" id="vTickAll" ${left ? '' : 'disabled'}>Tick all shown</button><button class="btn pri" id="vSave" disabled>Save</button>` : '') + `
+  <form id="vForm"><section class="panel"><div class="tw"><table class="asm">
+    <thead><tr><th>Value</th><th class="r">Value used</th><th>Unit</th><th>Where it comes from</th><th>Checked</th></tr></thead><tbody>
+    ${d.groups.map(g => `<tr><td colspan="5" style="background:var(--sunk)"><h3>${esc(g)}</h3></td></tr>` + d.values.filter(v => v.group === g).map(v => `
+      <tr data-k="${v.key}" class="${v.needs_confirm && !v.confirmed ? 'needs' : ''}">
+        <td>${esc(v.label)}${v.why ? `<div class="small muted">${esc(v.why)}</div>` : ''}</td>
+        <td class="r"><input class="f num" type="number" step="${VALUE_STEP(v.unit)}" name="v-${v.key}" value="${+v.value.toPrecision(6)}" ${v.min != null ? `min="${v.min}" max="${v.max}"` : ''} ${edit ? '' : 'disabled'} aria-label="${esc(v.label)}"></td>
+        <td class="muted small">${esc(v.unit || '')}</td>
+        <td class="src small">${esc(v.source || '')}${v.needs_confirm && v.default && Math.abs(v.value - v.default) > 1e-9 ? `<br><span class="muted">Proposed ${+v.default.toPrecision(6)}</span>` : ''}</td>
+        <td>${!v.needs_confirm ? '<span class="muted small">Not needed</span>'
+          : v.confirmed ? `<span class="chip ok" title="${esc(v.confirmed_by || '')} ${esc((v.confirmed_at || '').slice(0, 10))}">Confirmed</span>`
+          : edit ? `<label class="small"><input type="checkbox" name="c-${v.key}" aria-label="I have checked ${esc(v.label)}"> I have checked this</label>` : '<span class="chip medium">Needs a check</span>'}</td>
+      </tr>`).join('')).join('')}
+    </tbody></table></div></section></form>`;
+  if (!edit) return;
+  const form = $('#vForm'), save = $('#vSave');
+  const changes = () => d.values.flatMap(v => {
+    const inp = form[`v-${v.key}`], tick = form[`c-${v.key}`];
+    const val = parseFloat(inp.value), changed = !isNaN(val) && Math.abs(val - v.value) > 1e-6 * Math.max(1, Math.abs(v.value));
+    return changed || tick?.checked ? [{ key: v.key, ...(changed ? { value: val } : {}), confirm: !!tick?.checked }] : [];
+  });
+  form.addEventListener('input', () => { save.disabled = !changes().length; });
+  $('#vTickAll').addEventListener('click', () => { form.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = true); save.disabled = !changes().length; });
+  save.addEventListener('click', async () => {
+    const body = changes(); if (!body.length) return;
+    save.disabled = true;
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(PID)}/assumptions`, { values: body }, 'PUT');
+      toast(r.needed ? `Saved. ${r.needed} still to check.` : 'Saved. All values are confirmed.');
+      values();
+    } catch (err) { save.disabled = false; toast(err.message); }
+  });
 }
 
 /* ---------- assumptions ---------- */

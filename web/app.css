@@ -189,6 +189,7 @@ tr.open .caret{transform:rotate(90deg)}
 .asm td{vertical-align:middle}
 .asm input.f{width:110px;text-align:right;font-family:var(--mono)}
 .asm tr.changed td{background:var(--accent-soft)}
+.asm tr.needs td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
 .asm .src{font-size:12.5px;color:var(--muted);max-width:52ch}
 
 /* toast */
