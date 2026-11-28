@@ -1156,7 +1156,7 @@ async function rvShow() {
   const m = RV.q.items[RV.i];
   if (!m) {
     form.innerHTML = RV.q.total ? `<h2>All checked</h2><p class="small">Every member on this project's layouts has been looked at.</p>${RV.canEdit && RV.sheetId ? '<div><button class="btn" id="rvAdd">Add a beam the reader missed</button></div>' : ''}`
-      : `<h2>Nothing to review yet</h2><p class="small">Upload a beam layout on <a href="${P}upload">Add drawings</a>. Once it has been read, its beams and columns show up here.</p>`;
+      : `<h2>Nothing to review yet</h2><p class="small">Upload a beam layout on <a href="${P}upload">Add drawings</a>. Once it has been read, its beams show up here (columns are shown on the sheet but not counted until a column schedule is read).</p>`;
     $('#rvAdd')?.addEventListener('click', () => rvStartPick('add'));
     return;
   }

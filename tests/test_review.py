@@ -31,8 +31,8 @@ def sheet(session, proj):  # noqa: F811
 def test_queue_order_and_progress(client, sheet):
     sign_in(client, 'engineer@firm.in')                       # viewers can see the queue
     q = client.get('/api/projects/site-b/review').json()
-    assert (q['total'], q['checked']) == (4, 0)
-    assert [i['name'] for i in q['items']][:3] == ['B40', 'B2', None] and q['items'][-1]['name'] == 'B1'
+    assert (q['total'], q['checked']) == (3, 0)                # the column is not listed: not counted until M6
+    assert [i['name'] for i in q['items']] == ['B40', 'B2', 'B1'] and all(i['kind'] == 'beam' for i in q['items'])
     b40 = q['items'][0]
     assert not b40['placed'] and b40['sheet']['drg_no'] == 'MC-SD-07' and b40['sheet']['image_url'].endswith('display.png')
     assert client.patch(f"/api/projects/site-b/members/{b40['id']}", json=dict(action='reject')).status_code == 403
@@ -55,7 +55,7 @@ def test_accept_edit_redraw_reject_reopen(client, session, sheet):
     assert client.patch(url(ms['B2']), json=dict(action='reject')).json()['status'] == 'rejected'
     assert client.patch(url(ms['B2']), json=dict(action='reopen')).json()['status'] == 'auto'
     q = client.get('/api/projects/site-b/review').json()
-    assert (q['total'], q['checked']) == (4, 2) and {i['name'] for i in q['items']} == {'B2A', None}
+    assert (q['total'], q['checked']) == (3, 2) and {i['name'] for i in q['items']} == {'B2A'}
     fields = [c.field for c in session.scalars(select(Correction).order_by(Correction.created_at))]
     assert {'status', 'geometry', 'name', 'label_b_in', 'label_d_in'} <= set(fields)
 

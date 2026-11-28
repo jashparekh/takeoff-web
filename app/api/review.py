@@ -25,6 +25,7 @@ Viewer = Annotated[Project, Depends(project_role('viewer'))]
 Editor = Annotated[Project, Depends(project_role('editor'))]
 NAME = r'^(?:H?B|CB)\d{1,3}[A-Z]?(?:-[A-Za-z]+)?$'
 log = logging.getLogger(__name__)
+NOT_REVIEWED = ('column',)                 # read and shown on the sheet, but not counted until M6
 
 
 def get_relayout() -> Callable:
@@ -67,16 +68,18 @@ def spec_item(b: BeamSpec, s: Sheet, slug: str) -> dict:
 @router.get('/api/projects/{pid}/review')
 def review_queue(p: Viewer, db: Db, limit: int = 500):
     """Layout members and schedule readings not yet checked, least confident first; plus progress counts.
-    Repeats of another sheet are not listed (they are counted once, from the other sheet)."""
+    Repeats of another sheet are not listed (they are counted once, from the other sheet). Columns are left out
+    until they are counted (M6): checking them now would change no quantity."""
     rows = db.execute(select(Member, Sheet).join(Sheet, Member.sheet_id == Sheet.id)
-                      .where(Member.project_id == p.id, Member.status == 'auto')
+                      .where(Member.project_id == p.id, Member.status == 'auto', Member.kind.notin_(NOT_REVIEWED))
                       .order_by(Member.confidence, Sheet.drg_no, Member.kind, Member.name).limit(limit)).all()
     srows = db.execute(select(BeamSpec, Sheet).join(Sheet, BeamSpec.sheet_id == Sheet.id)
                        .where(BeamSpec.project_id == p.id, BeamSpec.status == 'auto', BeamSpec.duplicate_of.is_(None))
                        .order_by(BeamSpec.confidence, BeamSpec.name).limit(limit)).all()
     items = sorted([item(m, s, p.slug) for m, s in rows] + [spec_item(b, s, p.slug) for b, s in srows],
                    key=lambda i: (i['confidence'], i['item'], checks.natural(i['name'] or '')))
-    counts = dict(db.execute(select(Member.status, func.count()).where(Member.project_id == p.id)
+    counts = dict(db.execute(select(Member.status, func.count()).where(Member.project_id == p.id,
+                                                                       Member.kind.notin_(NOT_REVIEWED))
                              .group_by(Member.status)).all())
     for st, n in db.execute(select(BeamSpec.status, func.count()).where(
             BeamSpec.project_id == p.id, BeamSpec.duplicate_of.is_(None)).group_by(BeamSpec.status)).all():
