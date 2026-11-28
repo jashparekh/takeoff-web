@@ -114,4 +114,15 @@ def test_upload_review_calculate_worklounge(client, session, storage, queued):  
     r = client.post('/api/projects/worklounge/calculate', json={}).json()
     assert round(r['summary']['beam_steel_kg']) == 7744
     assert client.get('/api/projects/worklounge/review').json()['items'] == []
+
+    # M4: a run is refused until every value is confirmed, then saved with the pinned totals.
+    left = client.get('/api/projects/worklounge').json()['blockers']
+    assert len(left) == 1 and 'still to confirm in Values we need' in left[0]
+    assert client.post('/api/projects/worklounge/runs', json=dict(checked=True)).status_code == 409
+    vals = client.get('/api/projects/worklounge/values-needed').json()['values']
+    client.put('/api/projects/worklounge/assumptions', json=dict(values=[dict(key=v['key'], confirm=True) for v in vals
+                                                                         if v['needs_confirm'] and not v['confirmed']]))
+    r = client.post('/api/projects/worklounge/runs', json=dict(checked=True))
+    assert r.status_code == 201 and r.json()['run']['current']
+    assert round(r.json()['results']['summary']['beam_steel_kg']) == 7744
     print('\nReview effort on Work Lounge:', edits)

@@ -137,8 +137,9 @@ def get_project(p: Viewer, user: CurrentUser, db: Db):
         beams, ready, not_ready = build_inputs(p)['beams'], True, None
     except NotReady as e:
         beams, ready, not_ready = [], False, str(e)
+    from .runs import blockers, run_meta
     return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, not_ready=not_ready, buildings=buildings(p),
-                values_needed=len(needed(p)),
+                values_needed=len(needed(p)), latest_run=run_meta(db, p, latest_run(db, p)), blockers=blockers(p),
                 assumptions=assumptions_list(p), issues=[issue_dict(i) for i in p.issues],
                 model=build_model(db, p) or model_file(p.slug), beams_input=beams)
 
@@ -149,7 +150,8 @@ class CalcRequest(BaseModel):
 
 @router.post('/api/projects/{pid}/calculate')
 def calculate(p: Viewer, req: CalcRequest, db: Db):
-    """Run the engine on the project's current data, with what-if overrides. Nothing is saved."""
+    """What-if: run the engine on the project's current data with overrides. Never saved (runs are `POST /runs`,
+    gated on confirmed values and Review)."""
     try:
         r = Calc(build_inputs(p), req.overrides).run()
     except NotReady as e:

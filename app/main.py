@@ -13,6 +13,7 @@ from sqlalchemy import text
 from .api.projects import router as projects_router
 from .api.review import router as review_router
 from .api.values import router as values_router
+from .api.runs import router as runs_router
 from .api.uploads import MAX_FILES_PER_REQUEST, router as uploads_router
 from .auth.routes import router as auth_router
 from .db.session import get_engine
@@ -28,6 +29,7 @@ app.include_router(projects_router)
 app.include_router(uploads_router)
 app.include_router(review_router)
 app.include_router(values_router)
+app.include_router(runs_router)
 UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
 
