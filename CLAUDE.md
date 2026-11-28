@@ -145,7 +145,7 @@ Product rules (non-negotiable):
   `pdf.py` uses **pypdfium2** (D1: chosen over PyMuPDF for the licence) and holds a lock around every pdfium call —
   pdfium crashes the process if two threads use it. Retries 3×; a cron re-queues stuck work every minute.
 - `app/api/review.py` — Review (M2): `GET /api/projects/{pid}/review` (members still `auto`, least confident first,
-  plus counts), `PATCH …/members/{id}` (editor: `action` accept / reject / reopen; `name`, `label_b_in`, `label_d_in`;
+  plus counts; columns are left out until they are counted in M6 — still drawn on the sheet), `PATCH …/members/{id}` (editor: `action` accept / reject / reopen; `name`, `label_b_in`, `label_d_in`;
   `x1,y1,x2,y2` redraw, snapped to horizontal or vertical), `POST …/sheets/{id}/members` (add a missed beam). Every
   change writes `corrections` (now with `member_id`). Frontend `#p/<slug>/review[/<member id>]`: keys A accept,
   E edit, R redraw (click both ends on the sheet), X not on drawing, N / P next / back.
