@@ -9,7 +9,7 @@ let PID = null, P = '#';          // current project slug, and the hash prefix f
 const S = { me: undefined, project: null, calc: null, base: null, overrides: {}, viewers: [] };
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
 const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'values', 'assumptions', 'upload', 'review'];
-const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review', 'values'].includes(v)));
+const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review', 'values', 'issues'].includes(v)));
 
 class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
 async function api(path, body, method = 'POST') {
@@ -63,6 +63,7 @@ function shell(mode) {
   $('#sideFoot').innerHTML = (mode === 'project' && m ? `<div class="pmeta">${[m.consultant, m.revision].filter(Boolean).map(esc).join(' · ')}<br>${esc(m.status)}<hr></div>` : '') + who;
   $('#signout')?.addEventListener('click', signOut);
   valuesBadge(S.project?.values_needed);
+  if (S.project) setIssues();
 }
 function valuesBadge(n) { const c = $('#valuesCount'); if (c) { c.hidden = !n; c.textContent = n || ''; } }
 
@@ -275,12 +276,9 @@ function index() {
     return { ...m, partsData: parts, size: `${parts[0].b_in}×${parts[0].D_in}`, span_in: span, kg_m: m.kg / (span * 0.0254) };
   });
   S.byName = Object.fromEntries(S.members.map(m => [m.name, m]));
-  S.issues = [...S.project.issues, ...c.auto_issues];
-  S.issueBeams = {};
-  for (const i of S.issues) for (const b of i.beams || []) (S.issueBeams[b] ||= []).push(i);
+  setIssues();
   S.site = {};
   if (c.notebook) for (const r of c.notebook.rows) for (const n of r.beams) S.site[n.split('-')[0]] = r;
-  $('#issueCount').textContent = S.issues.length;
   const n = Object.keys(S.overrides).length; const oc = $('#ovrCount'); oc.hidden = !n; oc.textContent = n;
 }
 
@@ -312,7 +310,7 @@ function overview() {
   const s = S.calc.summary;
   const top = [...S.members].sort((a, b) => b.kg - a.kg).slice(0, 10), mx = top[0].kg;
   const nb = S.calc.notebook?.totals;
-  const open = S.issues.filter(i => i.severity !== 'low');
+  const open = S.issues.filter(i => i.status === 'open' && i.severity !== 'low');
   main.innerHTML = header(esc(S.project.meta.name), `${esc(S.project.meta.scope)} · ${S.members.length} beams · ${esc(S.project.meta.status)}`,
     `<a class="btn" href="${P}drawings">Open drawings</a><a class="btn pri" href="${P}beams">Beam by beam</a>`) + runPanel() + kpis() + `
   <div class="grid g-main">
@@ -329,7 +327,7 @@ function overview() {
           ...s.concrete_steps])}</div></section>
     </div>
     <div class="stack">
-      <section class="panel"><div class="hd"><h2>Needs an answer</h2><a class="small" href="${P}issues">All ${S.issues.length}</a></div>
+      <section class="panel"><div class="hd"><h2>Needs an answer</h2><a class="small" href="${P}issues">All ${S.issues.filter(i => i.status === 'open').length} open</a></div>
         ${open.map(i => `<a href="${P}issues" style="display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit">${sevChip(i.severity)}<span>${esc(i.title)}</span></a>`).join('')}</section>
       ${nb ? `<section class="panel"><div class="hd"><h2>Site QS notebook</h2><a class="small" href="${P}notebook">Compare</a></div><div class="pad stack small">
         <div class="row"><span class="sp">Notebook, beams</span><b class="mono">${fx(nb.beams.theirs)} kg</b></div>
@@ -634,20 +632,60 @@ function whereLink(w) {
   if (w.x) return `${P}drawings/${w.sheet}/@${w.x},${w.y},${w.zoom || 3}`;
   return `${P}drawings/${w.sheet}`;
 }
-function issues() {
-  const order = { high: 0, medium: 1, low: 2 };
-  const list = [...S.issues].sort((a, b) => order[a.severity] - order[b.severity]);
+function issues(filter = 'open') {
+  const order = { high: 0, medium: 1, low: 2 }, edit = S.project.role !== 'viewer';
+  const all = [...S.issues].sort((a, b) => (a.status !== 'open') - (b.status !== 'open') || order[a.severity] - order[b.severity]);
+  const open = all.filter(i => i.status === 'open');
+  const list = filter === 'open' ? open : all;
+  const beamLink = b => S.byName?.[b] ? `<a href="${P}beam/${b}">${b}</a>` : esc(b);
+  const statusChip = s => s === 'open' ? '' : `<span class="chip ${s === 'resolved' ? 'ok' : 'acc'}">${s === 'resolved' ? 'Resolved' : 'Answered'}</span>`;
   main.innerHTML = header('Issues', 'Things the drawings do not say, or say twice. Each one names the value we used until the consultant answers.',
-    `<button class="btn" id="copy">Copy questions for consultant</button>`) + `
-  <section class="panel">${list.map(i => `<div class="iss"><div><div class="row">${sevChip(i.severity)}<span class="chip">${esc(i.kind)}</span>${i.auto ? '<span class="chip acc">found by Takeoff</span>' : ''}</div>
-    <div class="t" style="margin-top:6px">${esc(i.title)}</div><p class="small" style="margin-top:4px;color:var(--fg2)">${esc(i.detail)}</p>
-    <dl><dt>Using for now</dt><dd>${esc(i.assumption)}</dd><dt>Affects</dt><dd>${esc(i.affects)}</dd><dt>Ask</dt><dd>${esc(i.ask)}</dd>
-    ${i.beams ? `<dt>Beams</dt><dd>${i.beams.map(b => S.byName[b] ? `<a href="${P}beam/${b}">${b}</a>` : b).join(', ')}</dd>` : ''}</dl></div>
-    <div class="acts">${i.where ? `<a class="btn sm" href="${whereLink(i.where)}">Show on drawing</a>` : ''}</div></div>`).join('')}</section>`;
-  $('#copy').addEventListener('click', async () => {
-    const txt = `${S.project.meta.name}: questions on ${S.project.meta.scope} (${S.project.meta.revision})\n\n` + list.map((i, n) => `${n + 1}. ${i.ask} (${i.title}; using ${i.assumption} for now)`).join('\n');
-    try { await navigator.clipboard.writeText(txt); toast('Questions copied'); } catch { toast('Copy failed: select the text manually'); }
-  });
+    `<div class="seg" id="iFilter"><button data-f="open" class="${filter === 'open' ? 'on' : ''}">Open (${open.length})</button><button data-f="all" class="${filter === 'all' ? 'on' : ''}">All (${all.length})</button></div>
+     <button class="btn" id="qOpen" ${open.length ? '' : 'disabled'}>Questions for the consultant</button>`) + `
+  <div id="qList"></div>
+  <section class="panel">${list.length ? list.map(i => `<div class="iss ${i.status !== 'open' ? 'done' : ''}"><div><div class="row">${sevChip(i.severity)}<span class="chip">${esc(i.kind || '')}</span>${i.auto ? '<span class="chip acc">found by Takeoff</span>' : ''}${statusChip(i.status)}</div>
+    <div class="t" style="margin-top:6px">${esc(i.title)}</div><p class="small" style="margin-top:4px;color:var(--fg2)">${esc(i.detail || '')}</p>
+    <dl><dt>Using for now</dt><dd>${esc(i.assumption || '')}</dd><dt>Affects</dt><dd>${esc(i.affects || '')}</dd><dt>Ask</dt><dd>${esc(i.ask || '')}</dd>
+    ${i.beams?.length ? `<dt>Beams</dt><dd>${i.beams.map(beamLink).join(', ')}</dd>` : ''}</dl></div>
+    <div class="acts">${i.where ? `<a class="btn sm" href="${whereLink(i.where)}">Show on drawing</a>` : ''}
+      ${edit ? (i.status === 'open' ? `<button class="btn sm" data-st="answered" data-c="${esc(i.id)}">Consultant answered</button><button class="btn sm" data-st="resolved" data-c="${esc(i.id)}">Resolved</button>`
+                                    : `<button class="btn sm" data-st="open" data-c="${esc(i.id)}">Open again</button>`) : ''}</div></div>`).join('')
+    : `<div class="pad muted">${filter === 'open' ? 'No open issues.' : 'No issues.'}</div>`}</section>`;
+  $('#iFilter').addEventListener('click', e => { const b = e.target.closest('button'); if (b) issues(b.dataset.f); });
+  main.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(PID)}/issues/${encodeURIComponent(b.dataset.c)}`, { status: b.dataset.st }, 'PATCH');
+      const k = S.project.issues.findIndex(x => x.id === r.id); if (k >= 0) S.project.issues[k] = r;
+      setIssues(); issues(filter);
+      toast({ answered: 'Marked answered', resolved: 'Marked resolved', open: 'Open again' }[r.status]);
+    } catch (err) { b.disabled = false; toast(err.message); }
+  }));
+  $('#qOpen').addEventListener('click', () => questions(open));
+}
+
+/* The question list for the consultant: open issues, numbered, with the value used meanwhile. Copy or print (PDF). */
+function questions(open) {
+  const m = S.project.meta;
+  const head = `${m.name}${m.scope ? ` · ${m.scope}` : ''}${m.revision ? ` (${m.revision})` : ''}`;
+  const today = new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' });
+  const txt = `Questions for the consultant: ${head}, ${today}\n\n` +
+    open.map((i, n) => `${n + 1}. ${i.ask} (${i.title}${i.beams?.length ? `; beams ${i.beams.join(', ')}` : ''}; using ${i.assumption} for now)`).join('\n');
+  $('#qList').innerHTML = `<section class="panel pad stack qlist" id="qPrint">
+    <div class="row" style="justify-content:space-between"><div><h2>Questions for the consultant</h2><div class="small muted">${esc(head)} · ${esc(today)} · ${open.length} open</div></div>
+      <div class="row noprint"><button class="btn" id="qCopy">Copy</button><button class="btn" id="qPdf">Print or save as PDF</button><button class="btn" id="qClose">Close</button></div></div>
+    <ol class="qs">${open.map(i => `<li><b>${esc(i.ask)}</b><div class="small muted">${esc(i.title)}${i.beams?.length ? ` · beams ${esc(i.beams.join(', '))}` : ''} · using ${esc(i.assumption)} for now</div></li>`).join('')}</ol>
+  </section>`;
+  $('#qCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(txt); toast('Questions copied'); } catch { toast('Copy failed: select the text manually'); } });
+  $('#qPdf').addEventListener('click', () => { document.body.classList.add('printing-q'); window.print(); document.body.classList.remove('printing-q'); });
+  $('#qClose').addEventListener('click', () => { $('#qList').innerHTML = ''; });
+  $('#qList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function setIssues() {
+  S.issues = S.project.issues || [];
+  S.issueBeams = {};
+  for (const i of S.issues) if (i.status === 'open') for (const b of i.beams || []) (S.issueBeams[b] ||= []).push(i);
+  const n = S.issues.filter(i => i.status === 'open').length, c = $('#issueCount'); if (c) c.textContent = n || '';
 }
 
 /* ---------- site notebook ---------- */

@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..services import checks
-from ..db.models import Bar, BeamSpec, Building, Floor, Issue, Job, Member, Sheet, Upload
+from ..db.models import Bar, BeamSpec, Building, Floor, Job, Member, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
 import numpy as np
@@ -384,8 +384,6 @@ def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
                     repeats.append(name)
                 db.add(spec)
                 n += 1
-            if repeats:
-                repeat_issue(db, s, repeats)
             db.flush()
             checks.run(db, s.project_id)
             s.schedule_version = SCHEDULE_VERSION
@@ -393,20 +391,6 @@ def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
                              + '.')
     except Skip:
         return
-
-
-def repeat_issue(db: Session, s: Sheet, names: list[str]) -> None:
-    """One Issue per sheet listing the elevations it repeats (pilot: schedule sheet 2 repeats B68–B73)."""
-    code = f'REP-{s.drg_no or s.id.hex[:6]}'
-    i = db.scalar(select(Issue).where(Issue.project_id == s.project_id, Issue.code == code))
-    if i is None:
-        i = Issue(project_id=s.project_id, code=code, rule='schedule_repeat', severity='low', kind='Drawing repeats')
-        db.add(i)
-    i.title = f'{s.drg_no or "A schedule sheet"} repeats {len(names)} beam elevation{"s" if len(names) != 1 else ""}'
-    i.detail = f'Already drawn on another schedule sheet: {", ".join(sorted(names, key=lambda n: (len(n), n)))}. Counted once.'
-    i.affects, i.assumption = 'Steel quantity', 'Each beam counted once'
-    i.ask = 'Confirm these are repeats, not separate beams with the same names.'
-    i.beams = sorted({n.split('-')[0] for n in names})
 
 
 def vision(db: Session, storage: Storage, sheet_id, *, final: bool = True, client=None) -> str:

@@ -58,7 +58,7 @@ def test_schedule_stage_counts_repeats_once(client, session, proj, floors, stora
     assert any(b.role == 'Bottom through' for b in b13.bars)
     dups = sorted(b.name for b in specs if b.duplicate_of)
     assert dups == ['B68', 'B69', 'B71', 'B72', 'B73', 'HB70']
-    issue = session.scalar(select(Issue).where(Issue.rule == 'schedule_repeat'))
+    issue = session.scalar(select(Issue).where(Issue.rule == 'check_repeat'))
     assert issue and 'B68' in issue.detail and issue.beams == ['B68', 'B69', 'B71', 'B72', 'B73', 'HB70']
     # Read again: nothing doubles up.
     s2 = sheets['MC-SD-06-02']
@@ -69,4 +69,4 @@ def test_schedule_stage_counts_repeats_once(client, session, proj, floors, stora
     finally:
         stages.SCHEDULE_VERSION -= 1
     assert len(session.scalars(select(BeamSpec)).all()) == len(specs)
-    assert len(session.scalars(select(Issue).where(Issue.rule == 'schedule_repeat')).all()) == 1
+    assert len(session.scalars(select(Issue).where(Issue.rule == 'check_repeat')).all()) == 1

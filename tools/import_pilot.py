@@ -18,6 +18,8 @@ from app.db.session import session_factory
 from app.engine import Calc
 from app.services.inputs_builder import engine_version
 from app.services.values import ensure_values
+from app.services import checks
+from app.api.compare import notebook_compare
 
 DATA = Path(__file__).parents[1] / 'app' / 'data'
 META_COLS = ('name', 'scope', 'client', 'consultant', 'revision', 'status')
@@ -72,8 +74,11 @@ def import_pilot(session: Session, slug: str, replace: bool = False, data_dir: P
     nb = read(d, 'notebook.json')
     if nb:
         session.add(SiteTakeoff(project_id=p.id, source=nb['source'], data_json=nb))
+    results = Calc(inputs).run()
     session.add(Run(project_id=p.id, engine_version=engine_version(), inputs_json=inputs,
-                    results_json=Calc(inputs).run(), note=f'Imported from app/data/{slug}'))
+                    results_json=results, note=f'Imported from app/data/{slug}'))
+    session.flush()
+    checks.run(session, p.id, results, notebook_compare(nb, results))     # issues found from the imported results
     return p
 
 

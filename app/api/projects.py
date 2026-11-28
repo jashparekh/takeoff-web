@@ -8,7 +8,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -16,18 +16,19 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
 from ..auth.deps import CurrentUser, Db, project_role, role_on
-from ..db.models import Building, Floor, Issue, Project, ProjectMember, Run, SiteTakeoff
+from ..db.models import Building, Correction, Floor, Issue, Project, ProjectMember, Run, SiteTakeoff
 from ..services.inputs_builder import NotReady, assumptions_list, build_inputs, measured_floors
 from ..engine import Calc
 from ..services.model_builder import build_model
 from ..services.values import ensure_values, needed
-from .compare import auto_issues, notebook_compare
+from .compare import notebook_compare
 
 DATA = Path(__file__).parents[1] / 'data'
 META_COLS = ('name', 'scope', 'client', 'city', 'consultant', 'revision', 'status')
 
 router = APIRouter()
 Viewer = Annotated[Project, Depends(project_role('viewer'))]
+Editor = Annotated[Project, Depends(project_role('editor'))]
 
 
 @lru_cache
@@ -44,9 +45,17 @@ def meta(p: Project) -> dict:
     return {**(p.meta_json or {}), **{k: getattr(p, k) for k in META_COLS}, 'id': p.slug}
 
 
+SEV = {'high': 0, 'medium': 1, 'low': 2}
+
+
 def issue_dict(i: Issue) -> dict:
     return dict(id=i.code, severity=i.severity, kind=i.kind, title=i.title, detail=i.detail, affects=i.affects,
-                assumption=i.assumption, ask=i.ask, beams=i.beams, where=i.where_json, status=i.status)
+                assumption=i.assumption, ask=i.ask, beams=i.beams, where=i.where_json, status=i.status,
+                auto=i.rule is not None)
+
+
+def issues_sorted(p: Project) -> list[dict]:
+    return [issue_dict(i) for i in sorted(p.issues, key=lambda i: (i.status != 'open', SEV.get(i.severity, 3), i.code))]
 
 
 def buildings(p: Project) -> list[dict]:
@@ -140,7 +149,7 @@ def get_project(p: Viewer, user: CurrentUser, db: Db):
     from .runs import blockers, run_meta
     return dict(meta=meta(p), role=role_on(db, p, user), ready=ready, not_ready=not_ready, buildings=buildings(p),
                 values_needed=len(needed(p)), latest_run=run_meta(db, p, latest_run(db, p)), blockers=blockers(p),
-                assumptions=assumptions_list(p), issues=[issue_dict(i) for i in p.issues],
+                assumptions=assumptions_list(p), issues=issues_sorted(p),
                 model=build_model(db, p) or model_file(p.slug), beams_input=beams)
 
 
@@ -158,10 +167,27 @@ def calculate(p: Viewer, req: CalcRequest, db: Db):
         raise HTTPException(409, str(e))
     nb = db.scalar(select(SiteTakeoff).where(SiteTakeoff.project_id == p.id)
                    .order_by(SiteTakeoff.created_at.desc()).limit(1))
-    cmp = notebook_compare(nb.data_json if nb else None, r)
-    r['notebook'] = cmp
-    r['auto_issues'] = auto_issues(r, cmp)
+    r['notebook'] = notebook_compare(nb.data_json if nb else None, r)
     return r
+
+
+class IssuePatch(BaseModel):
+    status: Literal['open', 'answered', 'resolved']
+
+
+@router.patch('/api/projects/{pid}/issues/{code}')
+def change_issue(p: Editor, code: str, req: IssuePatch, user: CurrentUser, db: Db):
+    """Mark an issue answered (the consultant replied) or resolved, or open it again. A check that runs again keeps
+    the status; an issue nobody acted on is removed when its check no longer finds it."""
+    i = db.scalar(select(Issue).where(Issue.project_id == p.id, Issue.code == code))
+    if i is None:
+        raise HTTPException(404)
+    if i.status != req.status:
+        db.add(Correction(project_id=p.id, field=f'issue:{code}:status', old_value=i.status, new_value=req.status,
+                          user_id=user.id))
+        i.status = req.status
+    db.flush()
+    return issue_dict(i)
 
 
 @router.get('/drawings/{pid}/{name}')

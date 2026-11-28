@@ -1,4 +1,4 @@
-"""Compare a calculation with a site takeoff (the QS notebook), and raise automatic issues from the result."""
+"""Compare a calculation with a site takeoff (the QS notebook). The issues raised from it are checks (services/checks.py)."""
 from __future__ import annotations
 
 from ..engine import unit_wt
@@ -44,24 +44,3 @@ def notebook_compare(nb: dict | None, result: dict) -> dict | None:
                             chajja=dict(theirs=0, ours=cb),
                             not_in_notebook=not_in_nb,
                             beams=dict(theirs=theirs_total, ours=ours_total, diff=theirs_total - ours_total)))
-
-
-def auto_issues(result: dict, cmp: dict | None) -> list:
-    out = []
-    l3 = sorted({b['base'] for b in result['beams'] for x in b['bars']
-                 if x['role'] == 'Extra top @ support' and 'L/3' in x['steps'][0]['formula']})
-    if l3:
-        out.append(dict(id='A1', severity='low', kind='Assumed length', auto=True,
-                        title=f'Extra top bar length not drawn on {len(l3)} beams (L/3 used)',
-                        detail='Where the elevation shows extra top bars without a length, they are taken L/3 into the span from the support face.',
-                        affects='Extra top bars', assumption='L/3 + b/2', ask='Confirm the curtailment length for extra top bars.', beams=l3))
-    if cmp:
-        big = [r for r in cmp['rows'] if r['diff_pct'] is not None and abs(r['diff_pct']) >= 25 and abs(r['diff_kg']) >= 20]
-        if big:
-            out.append(dict(id='A2', severity='medium', kind='Site count differs', auto=True,
-                            title=f'Site QS notebook differs by 25% or more on {len(big)} beam groups',
-                            detail='Largest gaps: ' + ', '.join(f"{r['label']} ({r['diff_kg']:+.0f} kg)" for r in sorted(big, key=lambda r: -abs(r['diff_kg']))[:6]) + '.',
-                            affects='Steel quantity', assumption='Our count follows the drawn bar lengths',
-                            ask='Check these beams on site against the drawing.',
-                            beams=sorted({n.split('-')[0] for r in big for n in r['beams']})))
-    return out
