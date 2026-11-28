@@ -117,7 +117,7 @@ def stale_work(db, at) -> tuple[list, list]:
         Sheet.sheet_type == 'beam_layout', Sheet.pt_per_in.is_not(None), Sheet.layout_version == stages.LAYOUT_VERSION))
         if stages.stale_schedule(db, s)}
     unlaid |= set(db.scalars(select(Sheet.id).where(       # bottom slabs: read by the 'slab' stage, same queue slot
-        Sheet.sheet_type == 'slab_bottom', Sheet.pt_per_in.is_not(None),
+        Sheet.sheet_type.in_(('slab_bottom', 'slab_top')), Sheet.pt_per_in.is_not(None),
         (Sheet.slab_version.is_(None)) | (Sheet.slab_version != stages.SLAB_VERSION))))
     unlaid |= set(db.scalars(select(Sheet.id).where(       # schedules: read by the 'schedule' stage, same queue slot
         Sheet.sheet_type == 'beam_schedule',

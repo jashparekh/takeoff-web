@@ -101,21 +101,27 @@ def build_inputs(project: Project) -> dict:
         # Slab openings and chajjas come from the slab layouts, read in M5.
         raise NotReady('Not ready to calculate: the slab layouts have not been read yet.')
     slab = dict(s['slab'])
-    panels = slab_panels(db, f) if db is not None else None
-    if panels:
-        slab['panels'] = panels
+    if db is not None:
+        slab |= slab_panels(db, f)
     return dict(assumptions=assumptions_list(project), beams=beams, chajja=s.get('chajja'), slab=slab)
 
 
-def slab_panels(db: Session, floor: Floor) -> list[dict] | None:
-    """The floor's bottom-slab panels as the engine takes them, once every panel read has been checked in Review
-    (until then the slab is measured by average spacing, shown as an assumption)."""
+def slab_panels(db: Session, floor: Floor) -> dict:
+    """The floor's slab readings as the engine takes them: `panels` (bottom bars, per panel) and `top` (bars over
+    beams, per group, with the sheet's `top_distribution`). Each is given only once every one of its items has been
+    checked in Review; until then that part is measured by average spacing, shown as an assumption."""
     ps = db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'panel',
                                          Member.status != 'rejected')).all()
-    if not ps or any(p.status not in CHECKED for p in ps):
-        return None
-    return [dict(name=p.name, area_sqft=p.area_sqft, thk_in=(p.data or {}).get('thk_in'),
-                 bars=(p.data or {}).get('bars', [])) for p in sorted(ps, key=lambda p: natural(p.name))]
+    bottom = [p for p in ps if 'bars' in (p.data or {})]
+    top = [p for p in ps if 'top' in (p.data or {})]
+    out = {}
+    if bottom and all(p.status in CHECKED for p in bottom):
+        out['panels'] = [dict(name=p.name, area_sqft=p.area_sqft, thk_in=p.data.get('thk_in'), bars=p.data['bars'])
+                         for p in sorted(bottom, key=lambda p: natural(p.name))]
+    if top and all(p.status in CHECKED for p in top):
+        out['top'] = [dict(name=p.name, **p.data['top']) for p in sorted(top, key=lambda p: natural(p.name))]
+        out['top_distribution'] = next((p.data.get('distribution') for p in top if p.data.get('distribution')), None)
+    return out
 
 
 def panels_waiting(db: Session, floor: Floor) -> int:

@@ -136,7 +136,17 @@ Product rules (non-negotiable):
   thicker panels' concrete, and keeps top bars on the average method (top sheet: next PR). Checks: `X-SLAB-THK-<P>`
   (pilot I6) and `X-SLAB-AVG` (panels waiting for Review). Pilot (`golden_report --slab`): 86 callouts / 86 bar lines,
   57 panels (18 with both directions called out), distribution K8@9, P33 6"; bottom 1,619 kg vs 1,678 averaged
-  (−3.5%: 3,981 of 4,569 sq ft read as panels, drawn spacings closer than the 8.5" average), slab 3,836 vs 3,894 (−1.5%).
+  (−3.5%: 3,981 of 4,569 sq ft read as panels, drawn spacings closer than the 8.5" average).
+- Top slab (M5 PR 2): `slab.read_top` reads a top-slab sheet. Each group of top bars over a beam: a callout on a hairline
+  along the beam (the extent the bars are spaced over), a dot (concentric circles, 2.8 pt) where the bars cross it, and
+  the bar drawn as a dashed 0.36 pt line across the beam to its end (extension + beam; dashes joined). A line with two
+  dots has alternate shapes that share its bars. Stored as `panel` members `T1…` with `data.top` and the sheet's
+  `distribution`; same stage `slab` (`SLAB_VERSION` 2) and Review. `slab_panels` gives `panels` and `top`
+  separately, each once all its items are checked. Engine `top_by_group`: nos × (drawn length + 2 × 12d) per shape;
+  distribution bars along the line across the longest drawn extension (less a 9" beam) at the sheet's note. Pilot:
+  105 callouts, 98 groups, 113 of the 123 bar marks; top 1,059 vs 1,207 kg averaged, distribution 642 vs 1,009, slab
+  3,320 vs 3,894 (−14.7%): the workbook assumed 2'-6" extensions both sides of every span beam; drawn they are mostly
+  2'-0", only where called out, one side at edge beams (and 10 marks are not read).
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).

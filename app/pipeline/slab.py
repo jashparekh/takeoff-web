@@ -259,3 +259,94 @@ def read_slab(path: str, page_no: int, pt_per_in: float) -> SlabReading:
                 p.bars.append(PanelBar(vert, out.distribution[0], out.distribution[1], length, width, 'distribution note'))
     out.panels.sort(key=lambda p: (round(p.rect[1] / 20), p.rect[0]))
     return out
+
+
+# ---------- top slab: bars over beams ----------
+#
+# On a top-slab sheet each group of top bars has a callout on a hairline running along the beam: the extent over
+# which the bars are spaced. Where the bars cross that line there is a dot (concentric circles), and the bar itself is
+# drawn as a dashed line across the beam out to its end in the panel (extension + beam). A line with two dots has two
+# bar shapes (e.g. 2'-0" and 4'-0" extensions) that alternate, so they share its bars.
+
+BAR_W = 0.36                       # dashed top bars (pilot); found as the width of the runs crossing callout lines
+DOT_PT = 2.8                       # outer ring of the dot
+
+
+@dataclass
+class TopShape:
+    length_in: float               # drawn bar: extension + beam
+    nos: float                     # bars of this shape (the line's bars shared between its shapes)
+
+
+@dataclass
+class TopGroup:
+    callout: Callout
+    nos: int                       # ⌊line length / spacing⌋ + 1
+    line_in: float
+    shapes: list = field(default_factory=list)
+
+    @property
+    def rect(self) -> tuple:
+        c, a, b = self.callout.line
+        return (c - 2, a, c + 2, b) if self.callout.vertical else (a, c - 2, b, c + 2)
+
+    def json(self) -> dict:
+        return dict(vertical=self.callout.vertical, dia=self.callout.dia, sp=self.callout.sp, nos=self.nos,
+                    line_in=round(self.line_in, 1),
+                    shapes=[dict(length_in=round(s.length_in, 1), nos=round(s.nos, 2)) for s in self.shapes])
+
+
+@dataclass
+class TopReading:
+    groups: list = field(default_factory=list)
+    distribution: tuple | None = None
+    callouts: int = 0
+    dots: int = 0
+
+
+def dots_on(vec: g.Vectors) -> list[tuple[float, float]]:
+    out = []
+    for p in vec.paths:
+        xs, ys = [q[1] for q in p.points], [q[2] for q in p.points]
+        if len(xs) >= 10 and abs(max(xs) - min(xs) - DOT_PT) < 0.15 and abs(max(ys) - min(ys) - DOT_PT) < 0.15:
+            out.append(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
+    return out
+
+
+def read_top(path: str, page_no: int, pt_per_in: float) -> TopReading:
+    vec = g.read_vectors(path, page_no)
+    edges = g.beam_edges(vec, pt_per_in)
+    lw = lettering_width(vec, edges.width) if edges else None
+    if lw is None:
+        return TopReading()
+    H, V = hairlines(vec)
+    callouts, words = read_callouts(path, page_no, lw, H, V)
+    dots = dots_on(vec)
+    bH, bV = vec.axis_lines(BAR_W)
+    runs_h, runs_v = g.merge_lines(bH, 3.0), g.merge_lines(bV, 3.0)
+    out = TopReading(distribution=distribution_note(words), callouts=len(callouts), dots=len(dots))
+    for f in callouts:
+        if not f.line:
+            continue
+        c, a, b = f.line
+        on = [d for d in dots if (abs(d[0] - c) < 2 and a - 2 <= d[1] <= b + 2) if f.vertical] if f.vertical else \
+             [d for d in dots if abs(d[1] - c) < 2 and a - 2 <= d[0] <= b + 2]
+        lengths = []
+        for d in on:                      # the drawn bar through the dot, across the callout line
+            along = d[1] if f.vertical else d[0]
+            best = None
+            for k, rs in (runs_h if f.vertical else runs_v).items():
+                if abs(k - along) > 6:
+                    continue
+                for ra, rb in rs:
+                    if ra - 1 <= c <= rb + 1 and (best is None or abs(k - along) < best[0]):
+                        best = (abs(k - along), rb - ra)
+            if best:
+                lengths.append(best[1] / pt_per_in)
+        if not lengths:
+            continue
+        line_in = (b - a) / pt_per_in
+        n = math.floor(line_in / f.sp) + 1
+        out.groups.append(TopGroup(f, n, line_in, [TopShape(L, n / len(lengths)) for L in lengths]))
+    out.groups.sort(key=lambda t: (round(t.rect[1] / 20), t.rect[0]))
+    return out

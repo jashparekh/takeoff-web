@@ -118,25 +118,34 @@ def span_report(lay, inputs) -> dict:
 
 
 SLAB_BOTTOM = DATA / 'source' / '260919_SF_BOTTOM SLAB REINFORCEMENT LAYOUT.pdf'
+SLAB_TOP = DATA / 'source' / '260919_SF_TOP SLAB REINFORCEMENT LAYOUT.pdf'
 
 
 def slab_report(pt_per_in: float) -> dict:
-    """Bottom slab panel by panel against the averaged method (plan M5 golden: within ±3%, difference explained)."""
+    """Slab read off the drawings (bottom panel by panel, top bars group by group) against the averaged method (plan M5
+    golden: ±3%, difference explained, not forced)."""
     from app.engine import Calc
-    from app.pipeline.slab import read_slab
+    from app.pipeline.slab import read_slab, read_top
     t = time.time()
     r = read_slab(str(SLAB_BOTTOM), 1, pt_per_in)
     inputs = json.loads((DATA / 'inputs.json').read_text())
     avg = Calc(inputs).run()['slab']
     panels = [dict(name=f'P{i}', area_sqft=p.size_in(pt_per_in)[0] * p.size_in(pt_per_in)[1] / 144, thk_in=p.thk_in,
                    bars=[b.json() for b in p.bars]) for i, p in enumerate(r.panels, 1)]
-    per = Calc({**inputs, 'slab': {**inputs['slab'], 'panels': panels}}).run()['slab']
+    top = read_top(str(SLAB_TOP), 1, pt_per_in)
+    groups = [dict(name=f'T{i}', **t.json()) for i, t in enumerate(top.groups, 1)]
+    per = Calc({**inputs, 'slab': {**inputs['slab'], 'panels': panels, 'top': groups,
+                                   'top_distribution': top.distribution}}).run()['slab']
     return dict(seconds=round(time.time() - t, 1), callouts=r.callouts, bar_lines=r.hairlines, panels=len(r.panels),
                 both_directions=sum(1 for p in r.panels if len({c.vertical for c in p.callouts}) == 2),
                 distribution=r.distribution, thick_panels=[(f'P{i}', p.thk_in) for i, p in enumerate(r.panels, 1) if p.thk_in],
                 panel_sqft=round(sum(p['area_sqft'] for p in panels)), net_sqft=round(avg['net_sqft']),
                 bottom_kg_panels=round(per['bottom_kg']), bottom_kg_average=round(avg['bottom_kg']),
                 bottom_diff_pct=round((per['bottom_kg'] / avg['bottom_kg'] - 1) * 100, 1),
+                top_callouts=top.callouts, top_marks=top.dots, top_groups=len(top.groups),
+                top_shapes=sum(len(t.shapes) for t in top.groups), top_distribution=top.distribution,
+                top_kg_drawn=round(per['top_kg']), top_kg_average=round(avg['top_kg']),
+                dist_kg_drawn=round(per['dist_kg']), dist_kg_average=round(avg['dist_kg']),
                 slab_kg_panels=round(per['kg']), slab_kg_average=round(avg['kg']),
                 slab_diff_pct=round((per['kg'] / avg['kg'] - 1) * 100, 1))
 
