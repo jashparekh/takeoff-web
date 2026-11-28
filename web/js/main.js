@@ -8,8 +8,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let PID = null, P = '#';          // current project slug, and the hash prefix for its views: #p/<slug>/
 const S = { me: undefined, project: null, calc: null, base: null, overrides: {}, viewers: [] };
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
-const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'values', 'assumptions', 'upload', 'review'];
-const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review', 'values', 'issues'].includes(v)));
+const PROJECT_VIEWS = ['overview', 'model', 'drawings', 'beams', 'beam', 'slab', 'issues', 'notebook', 'runs', 'values', 'assumptions', 'upload', 'review'];
+const NEEDS_CALC = new Set(PROJECT_VIEWS.filter(v => !['overview', 'upload', 'review', 'values', 'issues', 'runs'].includes(v)));
 
 class ApiError extends Error { constructor(status, detail) { super(detail || `Request failed (${status})`); this.status = status; } }
 async function api(path, body, method = 'POST') {
@@ -93,7 +93,7 @@ async function route() {
   S.view = v;
   shell('project');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === (v === 'beam' ? 'beams' : v)));
-  const views = { overview: S.base ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, values, assumptions, upload, review };
+  const views = { overview: S.base ? overview : setup, model, drawings, beams, beam, slab, issues, notebook, runs, values, assumptions, upload, review };
   views[v](...rest);
   if (v !== 'model') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
 }
@@ -239,7 +239,7 @@ function setup() {
 function runPanel() {
   const p = S.project, r = S.run, edit = p.role !== 'viewer', left = p.blockers || [];
   const when = r ? new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-  const status = r ? `<div>Results from the calculation of ${esc(when)}${r.by ? ` by ${esc(r.by)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}.</div>
+  const status = r ? `<div>Results from the calculation of ${esc(when)}${r.by ? ` by ${esc(r.by)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}. <a href="${P}runs">All calculations and what changed</a></div>
       ${r.current ? '' : '<div class="warn-text">Out of date: the drawings, Review or values have changed since. Calculate again to update.</div>'}`
     : '<div>Not calculated yet.</div>';
   const todo = left.length ? `<div class="small"><b>Before calculating:</b><ul>${left.map(b => `<li>${esc(b)}${/Values we need/.test(b) ? ` · <a href="${P}values">Values we need</a>` : /Review/.test(b) ? ` · <a href="${P}review">Review</a>` : ''}</li>`).join('')}</ul></div>` : '';
@@ -714,6 +714,58 @@ function notebook() {
     <tr class="tot"><td>Pages 2+ (B36–B93)</td><td></td><td class="num">${fx(t.page2.theirs)}</td><td class="num">${fx(t.page2.ours)}</td><td class="num up">+${fx(t.page2.theirs - t.page2.ours)}</td><td colspan="2"></td></tr>
   </tbody></table></div></section>`;
   main.querySelector('tbody').addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) location.hash = P + 'beam/' + tr.dataset.n; });
+}
+
+/* ---------- calculations: saved runs and what changed between two ---------- */
+const sgn = (x, n = 0) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${fx(Math.abs(x), n)}`;
+const dcls = x => Math.abs(x) < 0.005 ? 'muted' : x > 0 ? 'up' : 'dn';
+async function runs(a, b) {
+  main.innerHTML = '<div class="loading">Loading calculations…</div>';
+  let list; try { list = await api(`/api/projects/${encodeURIComponent(PID)}/runs`); } catch (err) { main.innerHTML = header('Calculations', esc(err.message)); return; }
+  const when = r => new Date(r.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  if (!a && list.length >= 2) { a = list[1].id; b = list[0].id; }
+  main.innerHTML = header('Calculations', 'Every saved calculation, with what it used. Pick two to see what changed between them.') + `
+  <section class="panel"><div class="tw"><table><thead><tr><th>From</th><th>To</th><th>When</th><th>By</th><th>Note</th><th class="r">Steel</th><th class="r">Concrete</th><th class="r">₹/sq ft</th></tr></thead><tbody>
+    ${list.length ? list.map(r => `<tr><td><input type="radio" name="ra" value="${r.id}" ${r.id === a ? 'checked' : ''} aria-label="Compare from ${esc(when(r))}"></td>
+      <td><input type="radio" name="rb" value="${r.id}" ${r.id === b ? 'checked' : ''} aria-label="Compare to ${esc(when(r))}"></td>
+      <td class="nowrap">${esc(when(r))}</td><td>${esc(r.by || '—')}</td><td>${esc(r.note || '')}</td>
+      <td class="num">${fx(r.steel_t, 2)} t</td><td class="num">${fx(r.concrete_m3, 2)} m³</td><td class="num">${r.per_sqft == null ? '—' : fx(r.per_sqft)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="muted">Nothing calculated yet.</td></tr>'}
+  </tbody></table></div></section><div id="diff"></div>`;
+  main.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => {
+    const fa = main.querySelector('input[name=ra]:checked')?.value, fb = main.querySelector('input[name=rb]:checked')?.value;
+    if (fa && fb) { history.replaceState(null, '', `${P}runs/${fa}/${fb}`); showDiff(fa, fb); }
+  }));
+  if (a && b) showDiff(a, b);
+}
+async function showDiff(a, b) {
+  const el = $('#diff'); if (!el) return;
+  if (a === b) { el.innerHTML = '<section class="panel pad small muted">Pick two different calculations.</section>'; return; }
+  el.innerHTML = '<div class="loading">Comparing…</div>';
+  let d; try { d = await api(`/api/projects/${encodeURIComponent(PID)}/runs/${a}/diff/${b}`); } catch (err) { el.innerHTML = `<section class="panel pad">${esc(err.message)}</section>`; return; }
+  const n = { kg: 0, 'm³': 2, bags: 0, '₹': 0 };
+  const pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  const cell = x => `<td class="num">${fx(x.a, 0)}</td><td class="num">${fx(x.b, 0)}</td><td class="num ${dcls(x.delta)}">${sgn(x.delta)}</td>`;
+  const c = d.counts;
+  el.innerHTML = `
+  <section class="panel"><div class="hd"><h2>What changed</h2><span class="small muted">${pl(c.added, 'beam')} added · ${c.removed} removed · ${c.changed} changed${d.values.length ? ` · ${pl(d.values.length, 'value')} changed` : ''}${d.engine_changed ? ' · engine updated' : ''}</span></div>
+    <div class="tw"><table><thead><tr><th></th><th class="r">From</th><th class="r">To</th><th class="r">Change</th></tr></thead><tbody>
+    ${d.summary.map(s => `<tr><td>${esc(s.label)} <span class="muted small">${esc(s.unit)}</span></td><td class="num">${fx(s.a, n[s.unit] ?? 0)}</td><td class="num">${fx(s.b, n[s.unit] ?? 0)}</td><td class="num ${dcls(s.delta)}">${sgn(s.delta, n[s.unit] ?? 0)}</td></tr>`).join('')}
+    </tbody></table></div></section>
+  ${d.by_dia.length ? `<section class="panel"><div class="hd"><h2>Steel by bar size</h2><span class="small muted">incl. wastage</span></div><div class="tw"><table><thead><tr><th>Bar</th><th class="r">kg from</th><th class="r">kg to</th><th class="r">kg change</th><th class="r">₹ from</th><th class="r">₹ to</th><th class="r">₹ change</th></tr></thead><tbody>
+    ${d.by_dia.map(r => `<tr><td class="mono">${r.dia} mm</td>${cell(r.kg)}${cell(r.cost)}</tr>`).join('')}</tbody></table></div></section>` : ''}
+  <section class="panel"><div class="hd"><h2>Beams</h2><span class="small muted">${sgn(d.beams_kg_delta, 1)} kg before wastage</span></div>
+    ${d.members.length ? `<div class="tw"><table><thead><tr><th>Beam</th><th>Change</th><th class="r">kg from</th><th class="r">kg to</th><th class="r">Change</th><th>Why</th></tr></thead><tbody>
+    ${d.members.map(m => `<tr><td><b>${esc(m.name)}</b></td><td>${{ added: '<span class="chip ok">Added</span>', removed: '<span class="chip high">Removed</span>', changed: '<span class="chip acc">Changed</span>' }[m.change]}</td>
+      <td class="num">${fx(m.kg.a, 1)}</td><td class="num">${fx(m.kg.b, 1)}</td><td class="num ${dcls(m.kg.delta)}">${sgn(m.kg.delta, 1)}</td><td class="small">${m.reasons.map(esc).join('; ')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="pad muted small">No beam changed.</div>'}</section>
+  <section class="panel"><div class="hd"><h2>Slab</h2><span class="small muted">${esc(d.slab.method.a)}${d.slab.method.a !== d.slab.method.b ? ` → ${esc(d.slab.method.b)}` : ''}</span></div>
+    <div class="tw"><table><thead><tr><th></th><th class="r">From</th><th class="r">To</th><th class="r">Change</th></tr></thead><tbody>
+    ${[['Bottom bars', d.slab.bottom], ['Top bars', d.slab.top], ['Top distribution', d.slab.dist], ['Slab steel', d.slab.kg]].map(([l, x]) => `<tr><td>${l} <span class="muted small">kg</span></td>${cell(x)}</tr>`).join('')}
+    ${d.chajja ? `<tr><td>Chajja <span class="muted small">kg</span></td>${cell(d.chajja)}</tr>` : ''}
+    </tbody></table></div></section>
+  ${d.values.length ? `<section class="panel"><div class="hd"><h2>Values changed</h2></div><div class="tw"><table><thead><tr><th>Value</th><th class="r">From</th><th class="r">To</th></tr></thead><tbody>
+    ${d.values.map(v => `<tr><td>${esc(v.label)} <span class="muted small">${esc(v.unit || '')}</span></td><td class="num">${v.a == null ? '—' : +(+v.a).toPrecision(6)}</td><td class="num">${v.b == null ? '—' : +(+v.b).toPrecision(6)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
 }
 
 /* ---------- values we need ---------- */

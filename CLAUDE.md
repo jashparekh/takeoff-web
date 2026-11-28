@@ -158,6 +158,11 @@ Product rules (non-negotiable):
   panels by overlap, specs by name): reads the same → the person's decision carries over (noted "Same as checked on
   R0"); changed → left in Review at confidence ≤ 0.3 with "Changed since R0: …"; rejected → rejected again; added by a
   person and not read on the new one → carried as added. The stage note counts them; Add drawings shows "Replaced".
+- Comparing runs (M5 PR 4): `app/services/diff.py` `compare(run_a, run_b)` from the frozen runs: totals, steel by bar
+  size (kg incl. wastage and ₹), beams added / removed / changed with the reason from their inputs (size, span, kind,
+  stirrups, bars) — drawing changes listed first; a beam with the same inputs names the values that moved it — slab
+  by part and method, chajja, values changed, engine updated. `GET /api/projects/{pid}/runs/{a}/diff/{b}`. Frontend
+  `#p/<slug>/runs[/<a>/<b>]` "Calculations": every saved run, pick From / To (defaults to the last two).
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
@@ -196,7 +201,7 @@ Product rules (non-negotiable):
 
 Hash routes: `#signin[/expired]`, `#projects`, `#new`, and per project `#p/<slug>/<view>` where view is `overview`,
 `model[/B47]`, `drawings/<sheet>[/<beam>|/@x,y,zoom]`, `beams`, `beam/<name>`, `slab`, `issues`, `notebook`,
-`values`, `assumptions`, `upload[/<sheet id>]`, `review[/<member id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
+`runs[/<a>/<b>]`, `values`, `assumptions`, `upload[/<sheet id>]`, `review[/<member id>]`. Old links without `#p/<slug>/` open the Work Lounge pilot. In `web/js/main.js`, build
 in-project links with the `P` prefix (`href="${P}beams"`). A project with no measured floor shows only Overview
 (buildings and floors) and Add drawings.
 
