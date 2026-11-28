@@ -11,6 +11,9 @@ evaluated run (so a rule that was not evaluated never removes its Issues):
     numbering  beam numbers missing from the sequence (pilot: B42, B46, B51, B89)
   schedule  a schedule has been read
     repeat     a schedule sheet repeats elevations of another (pilot: sheet 2 repeats B68–B73); counted once
+  slab     bottom-slab panels have been read
+    slab-thk   a panel marked thicker than the slab (pilot: one panel 6" on MC-SD-06-04)
+    slab-avg   panels read but not yet checked: the slab is measured by average spacing meanwhile
   values   the project has uploaded drawings
     not-stated values the drawings don't give: concrete grade; clear cover and lap / anchorage length
   run      a run was just saved (its results), plus the latest site takeoff
@@ -46,6 +49,7 @@ class Ctx:
     members: list            # beams on layouts, not rejected
     specs: list              # schedule readings, not rejected, not repeats
     repeats: list            # schedule readings that repeat another sheet's
+    panels: list = None          # bottom-slab panels, not rejected
     results: dict | None = None
     site: dict | None = None  # notebook comparison of the run's results
 
@@ -184,6 +188,41 @@ def check_repeat(ctx: Ctx) -> dict:
     return out
 
 
+# ---------- slab ----------
+
+def check_slab_thickness(ctx: Ctx) -> dict:
+    from .values import BY_KEY
+    t = next((a.value for a in ctx.project.assumptions if a.key == 'slab_t_in'), BY_KEY['slab_t_in'].default)
+    out = {}
+    for p in ctx.panels:
+        thk = (p.data or {}).get('thk_in')
+        if thk and t and thk != t and p.status != 'rejected':
+            s = ctx.db.get(Sheet, p.sheet_id)
+            drg = (s.drg_no if s else None) or 'the bottom slab layout'
+            out[f'X-SLAB-THK-{p.name}'] = dict(
+                severity='medium', kind='Drawings disagree', beams=[],
+                where_json=dict(sheet=str(p.sheet_id), x=(p.x1 + p.x2) / 2, y=(p.y1 + p.y2) / 2, zoom=3),
+                title=f'Slab panel {p.name} marked {thk:g}" thick on {drg}; the slab is {t:g}"',
+                detail=f'One panel ({p.area_sqft or 0:,.0f} sq ft) carries a {thk:g}" thickness note; the rest of the slab '
+                       f'is {t:g}".',
+                affects='Slab concrete', assumption=f'{thk:g}" for this panel, {t:g}" elsewhere',
+                ask=f'Confirm the {thk:g}" panel: its thickness and extent.')
+    return out
+
+
+def check_slab_waiting(ctx: Ctx) -> dict:
+    waiting = [p for p in ctx.panels if p.status == 'auto']
+    if not waiting:
+        return {}
+    return {'X-SLAB-AVG': dict(
+        severity='low', kind='Waiting for Review', beams=[],
+        title=f'{len(waiting)} slab panel{"s" if len(waiting) != 1 else ""} read but not yet checked',
+        detail='The bottom slab is read panel by panel, but the readings are used only once every panel is checked '
+               'in Review. Until then the slab bottom bars are measured by average spacing.',
+        affects='Slab steel', assumption=f'Average spacing for the slab bottom mesh',
+        ask='Check the slab panels in Review.')}
+
+
 # ---------- values ----------
 
 def read_from_drawing(a: Assumption | None) -> bool:
@@ -256,6 +295,8 @@ RULES: tuple[Rule, ...] = (
     Rule('check_cantilever', 'drawings', check_cantilever),
     Rule('check_numbering', 'drawings', check_numbering),
     Rule('check_repeat', 'schedule', check_repeat),
+    Rule('check_slab_thickness', 'slab', check_slab_thickness),
+    Rule('check_slab_waiting', 'slab', check_slab_waiting),
     Rule('check_not_stated', 'values', check_not_stated),
     Rule('check_assumed_length', 'run', check_assumed_length),
     Rule('check_site_count', 'run', check_site_count),
@@ -270,13 +311,18 @@ def run(db: Session, project_id, results: dict | None = None, site: dict | None 
     members = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'beam',
                                               Member.status != 'rejected')).all()
     specs = db.scalars(select(BeamSpec).where(BeamSpec.project_id == project_id, BeamSpec.status != 'rejected')).all()
+    panels = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'panel',
+                                             Member.status != 'rejected')).all()
     ctx = Ctx(db, project, list(members), [s for s in specs if s.duplicate_of is None],
-              [s for s in specs if s.duplicate_of is not None], results, site)
+              [s for s in specs if s.duplicate_of is not None], list(panels), results, site)
     groups = set()
     if ctx.members and ctx.specs:                   # need both a layout and a schedule to compare
         groups.add('drawings')
     if ctx.specs or ctx.repeats:
         groups.add('schedule')
+    if ctx.panels or db.scalar(select(Sheet.id).where(Sheet.project_id == project_id,
+                                                      Sheet.slab_version.is_not(None)).limit(1)):
+        groups.add('slab')
     if db.scalar(select(Sheet.id).where(Sheet.project_id == project_id).limit(1)):
         groups.add('values')
     if results is not None:

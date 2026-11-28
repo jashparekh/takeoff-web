@@ -205,7 +205,7 @@ def member_dict(m: Member, pt_per_in: float | None) -> dict:
                 b_in=m.b_in, label_b_in=m.label_b_in, label_d_in=m.label_d_in, label_box=m.label_box,
                 length_in=round(length_pt / pt_per_in, 1) if length_pt and pt_per_in else None,
                 confidence=m.confidence, status=m.status, note=m.note, points=m.points, area_sqft=m.area_sqft,
-                clear_in=m.clear_in, clear_source=m.clear_source,
+                clear_in=m.clear_in, clear_source=m.clear_source, data=m.data,
                 placed=m.kind != 'beam' or (m.x1, m.y1) != (m.x2, m.y2))
 
 

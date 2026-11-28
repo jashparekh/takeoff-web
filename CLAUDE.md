@@ -124,6 +124,19 @@ Product rules (non-negotiable):
   totals and per-beam steel) and `blockers`. The frontend shows results from the latest run (views need a run, not
   just `ready`); `POST …/calculate` stays the never-saved what-if (no automatic issues any more: those are checks). Overview: Calculate panel (disabled with the
   blocker list) → values summary + tick + note → saved run. The pilot import's run is shown until a new one.
+- Slab panel by panel (M5 PR 1): `app/pipeline/slab.py` reads a bottom-slab sheet. Bar callouts (`K8@9"C/C`, parsed
+  forgivingly: 8 as s/g/B, @ as e/o/0) from the lettering render with lines removed (200/250/300 dpi, upright and
+  turned), then each hairline (0.12 pt bar line) still without one is read again from a 400 dpi crop at its start;
+  each callout's bar line; the panel from the bar line's middle to the nearest beam edges across it; callouts whose
+  panels overlap are one panel. A direction a panel doesn't call out takes the sheet's `DISTRIBUTION STEEL K8@9"C/C`
+  note; `6"THK` notes go to their panel. Stage `slab` (`SLAB_VERSION`, `sheets.slab_version`) stores `panel` members
+  with `data = {bars: [{vertical, dia, sp, length_in, width_in, nos, source}], thk_in}`; they go through Review like
+  beams. `inputs_builder.slab_panels` adds them to `inputs.slab.panels` only once every panel is checked; the engine's
+  `slab_by_panel` then sums nos × drawn length × (1 + `slab_anch_allow`) per direction (K10 counted as 10 mm), adds
+  thicker panels' concrete, and keeps top bars on the average method (top sheet: next PR). Checks: `X-SLAB-THK-<P>`
+  (pilot I6) and `X-SLAB-AVG` (panels waiting for Review). Pilot (`golden_report --slab`): 86 callouts / 86 bar lines,
+  57 panels (18 with both directions called out), distribution K8@9, P33 6"; bottom 1,619 kg vs 1,678 averaged
+  (−3.5%: 3,981 of 4,569 sq ft read as panels, drawn spacings closer than the 8.5" average), slab 3,836 vs 3,894 (−1.5%).
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
@@ -197,7 +210,8 @@ Pinned results (tests): beams 7,744 kg (incl. CB1 chajja 10 × 54″ = 301 kg), 
 bars 4,477 / 3,657 / 2,621 mm). Floor area basis 5,650 sq ft.
 
 Drawing issues on record: concrete grade not stated; cover and lap/Ld not stated; B5 9×24 on layout vs 9×18
-in schedule; B42/B46/B51/B89 numbers missing; schedule sheet 2 repeats B68–B73; one panel marked 6″.
+in schedule; B42/B46/B51/B89 numbers missing; schedule sheet 2 repeats B68–B73; one panel marked 6″. The checks also
+find B49, B55, B83 and B90 layout vs schedule size differences. Bottom slab notes: distribution steel K8@9"C/C; Fe550.
 
 Site check: the site QS's handwritten notebook totals 9,382 kg of beam steel vs Takeoff 7,744 kg (+1,638 kg;
 ~+1,940 like-for-like since the QS did not count CB1). Causes: QS runs extra bars full length, uses overall beam

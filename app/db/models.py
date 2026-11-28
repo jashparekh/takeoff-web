@@ -23,7 +23,7 @@ JOB_STATUSES = ('queued', 'running', 'done', 'failed')
 CLASSIFY_STATUSES = ('auto', 'needs_review', 'confirmed')     # confirmed = a person set or checked it
 # ok: dimensions agree with the printed scale. differs / borrowed / unchecked: a person must look.
 SCALE_STATUSES = ('ok', 'differs', 'borrowed', 'unchecked', 'not_needed', 'confirmed')
-MEMBER_KINDS = ('beam', 'column', 'slab_panel')
+MEMBER_KINDS = ('beam', 'column', 'slab_panel', 'panel')   # panel: a slab panel's bottom bars (M5)
 BAR_ROLES = ('Top through', 'Top main', 'Bottom through', 'Bottom extra', 'Extra top @ support')
 SPEC_KINDS = ('S', 'C')            # span, cantilever (engine's `kind`)
 # auto: read by the pipeline, not looked at. accepted / edited / added / rejected: a person decided (Review, M2).
@@ -250,6 +250,7 @@ class Sheet(Base):
     layout_note: Mapped[str | None] = mapped_column(Text)             # summary: labels found, members placed
     layout_schedule: Mapped[str | None] = mapped_column(String(16))   # schedule cantilevers it was read with (hash)
     schedule_version: Mapped[int | None] = mapped_column(Integer)     # schedule reader version that produced specs
+    slab_version: Mapped[int | None] = mapped_column(Integer)         # slab reader version that produced panels
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
     __table_args__ = (UniqueConstraint('project_id', 'page_hash'),
@@ -315,6 +316,7 @@ class Member(Base):
     clear_source: Mapped[str | None] = mapped_column(String(16))       # layout (geometry) | person
     points: Mapped[list | None] = mapped_column(Json)                  # slab_panel: outline [[x, y], …] pt
     area_sqft: Mapped[float | None] = mapped_column(Float)             # slab_panel: area inside the outline
+    data: Mapped[dict | None] = mapped_column(Json)                    # panel: {bars: [...], thk_in}
     confidence: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(16), default='auto')
     note: Mapped[str | None] = mapped_column(Text)
