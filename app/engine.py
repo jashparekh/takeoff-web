@@ -171,53 +171,43 @@ class Calc:
 
     # ---------------- slab ----------------
     def slab(self, beams_out: list) -> dict:
+        """Slab = concrete + bottom bars + top bars over beams + top distribution bars. The bottom bars are read panel
+        by panel off the bottom-slab sheet once its panels are checked (else average spacing); the top bars likewise
+        off the top-slab sheet (else average spacing and extension). Each part says which method it used."""
         a, s = self.a, self.inputs['slab']
         beam_area = sum(b['plan_sqft'] for b in beams_out)
         net = a['floor_sqft'] - s['staircase_sqft'] - s['lift_sqft'] - s['ducts_sqft'] - beam_area
         m2 = net * 0.092903
         conc = m2 * a['slab_t_in'] * IN / 1000
-        per_m = 1000 / (a['slab_bot_sp_in'] * IN)
+        steps = [Step('Net slab area', 'footprint − staircase − lift − ducts − beam plan area',
+                      f"{f(a['floor_sqft'])} − {s['staircase_sqft']} − {s['lift_sqft']} − {s['ducts_sqft']} − {f(beam_area, 1)}",
+                      net, 'sq ft')]
+        out = dict(net_sqft=net, area_m2=m2)
         panels = s.get('panels')
         if panels:                                  # read panel by panel off the bottom-slab sheet (M5)
-            return self.slab_by_panel(beams_out, net, m2, conc, panels)
-        bot = m2 * 2 * per_m * unit_wt(8) * (1 + a['slab_anch_allow'])
-        span_len = sum(b['clear_in'] for b in beams_out if b['kind'] == 'S') * IN / 1000
-        top_per_m = 1000 / (a['slab_top_sp_in'] * IN)
-        top_len = (2 * a['slab_top_ext_in'] + 9) * IN + 2 * 12 * 8
-        top = span_len * top_per_m * top_len / 1000 * unit_wt(8)
-        dist = span_len * 2 * math.ceil(a['slab_top_ext_in'] / a['slab_dist_sp_in']) * unit_wt(8)
-        steps = [
-            Step('Net slab area', 'footprint − staircase − lift − ducts − beam plan area',
-                 f"{f(a['floor_sqft'])} − {s['staircase_sqft']} − {s['lift_sqft']} − {s['ducts_sqft']} − {f(beam_area, 1)}", net, 'sq ft'),
-            Step('Slab concrete', 'net area × thickness', f"{m2:.2f} m² × {a['slab_t_in'] * IN / 1000:.4f} m", conc, 'm³'),
-            Step('Bottom mesh bars per m', '1000 / spacing', f"1000 / ({a['slab_bot_sp_in']:g}″ × 25.4)", per_m, '/m'),
-            Step('Bottom mesh (8φ both ways)', 'area × 2 × bars/m × 0.395 × (1 + allowance)',
-                 f"{m2:.2f} × 2 × {per_m:.3f} × 0.395 × {1 + a['slab_anch_allow']:g}", bot, 'kg'),
-            Step('Beam length carrying top bars', 'Σ clear spans of span beams', f"{span_len:.2f} m", span_len, 'm'),
-            Step('Top bar length', '(2 × extension + 9″) × 25.4 + 2 × 12d', f"(2 × {a['slab_top_ext_in']:g} + 9) × 25.4 + 192", top_len, 'mm'),
-            Step('Top bars over beams', 'beam length × bars/m × bar length × 0.395',
-                 f"{span_len:.2f} × {top_per_m:.3f} × {top_len / 1000:.3f} × 0.395", top, 'kg'),
-            Step('Top distribution bars', 'beam length × 2 sides × ⌈extension / spacing⌉ × 0.395',
-                 f"{span_len:.2f} × 2 × ⌈{a['slab_top_ext_in']:g} / {a['slab_dist_sp_in']:g}⌉ × 0.395", dist, 'kg'),
-        ]
-        return dict(net_sqft=net, area_m2=m2, concrete_m3=conc, bottom_kg=bot, top_kg=top, dist_kg=dist,
-                    kg=bot + top + dist, steps=[x.json() for x in steps], method='average')
+            out |= self.bottom_by_panel(panels, steps)
+            extra = sum(p['area_sqft'] * 0.092903 * (p['thk_in'] - a['slab_t_in']) * IN / 1000
+                        for p in panels if p.get('thk_in') and p['thk_in'] > a['slab_t_in'])
+            steps.insert(1, Step('Slab concrete', 'net area × thickness + thicker panels × extra depth',
+                                 f"{m2:.2f} m² × {a['slab_t_in'] * IN / 1000:.4f} m + {extra:.3f}", conc + extra, 'm³'))
+            conc += extra
+        else:
+            steps.append(Step('Slab concrete', 'net area × thickness', f"{m2:.2f} m² × {a['slab_t_in'] * IN / 1000:.4f} m", conc, 'm³'))
+            per_m = 1000 / (a['slab_bot_sp_in'] * IN)
+            bot = m2 * 2 * per_m * unit_wt(8) * (1 + a['slab_anch_allow'])
+            steps += [Step('Bottom mesh bars per m', '1000 / spacing', f"1000 / ({a['slab_bot_sp_in']:g}″ × 25.4)", per_m, '/m'),
+                      Step('Bottom mesh (8φ both ways)', 'area × 2 × bars/m × 0.395 × (1 + allowance)',
+                           f"{m2:.2f} × 2 × {per_m:.3f} × 0.395 × {1 + a['slab_anch_allow']:g}", bot, 'kg')]
+            out |= dict(bottom_kg=bot, method='average')
+        top = s.get('top')
+        out |= self.top_by_group(top, s.get('top_distribution'), steps) if top else self.top_average(beams_out, steps)
+        out |= dict(concrete_m3=conc, kg=out['bottom_kg'] + out['top_kg'] + out['dist_kg'], steps=[x.json() for x in steps])
+        return out
 
-    def top_bars(self, beams_out: list) -> tuple[float, float, float, float, float]:
-        a = self.a
-        span_len = sum(b['clear_in'] for b in beams_out if b['kind'] == 'S') * IN / 1000
-        top_per_m = 1000 / (a['slab_top_sp_in'] * IN)
-        top_len = (2 * a['slab_top_ext_in'] + 9) * IN + 2 * 12 * 8
-        top = span_len * top_per_m * top_len / 1000 * unit_wt(8)
-        dist = span_len * 2 * math.ceil(a['slab_top_ext_in'] / a['slab_dist_sp_in']) * unit_wt(8)
-        return span_len, top_per_m, top_len, top, dist
-
-    def slab_by_panel(self, beams_out: list, net: float, m2: float, conc: float, panels: list) -> dict:
-        """Bottom bars panel by panel, as drawn: each direction's bars are `nos` (⌊width / spacing⌋ + 1) of the
-        drawn length, plus the anchorage allowance. A panel marked thicker adds its extra concrete. Top bars keep the
-        average method until the top-slab sheet is read panel by panel."""
-        a = self.a
-        allow = 1 + a['slab_anch_allow']
+    def bottom_by_panel(self, panels: list, steps: list) -> dict:
+        """Bottom bars panel by panel, as drawn: each direction's bars are `nos` (⌊width / spacing⌋ + 1) of the drawn
+        length, plus the anchorage allowance."""
+        allow = 1 + self.a['slab_anch_allow']
         rows, bot, by_dia = [], 0.0, {}
         for p in panels:
             kg = 0.0
@@ -227,27 +217,52 @@ class Calc:
                 by_dia[x['dia']] = by_dia.get(x['dia'], 0) + k
             rows.append(dict(name=p['name'], kg=round(kg, 2), thk_in=p.get('thk_in'), bars=p['bars']))
             bot += kg
-        extra = sum(p['area_sqft'] * 0.092903 * (p['thk_in'] - a['slab_t_in']) * IN / 1000
-                    for p in panels if p.get('thk_in') and p['thk_in'] > a['slab_t_in'])
-        span_len, top_per_m, top_len, top, dist = self.top_bars(beams_out)
         n_bars = sum(len(p['bars']) for p in panels)
         dist_note = sum(1 for p in panels for x in p['bars'] if x['source'] != 'callout')
-        steps = [
-            Step('Slab concrete', 'net area × thickness + thicker panels × extra depth',
-                 f"{m2:.2f} m² × {a['slab_t_in'] * IN / 1000:.4f} m + {extra:.3f}", conc + extra, 'm³'),
-            Step('Bottom bars, panel by panel', 'Σ nos × drawn length × (1 + allowance) × d²/162, nos = ⌊width / spacing⌋ + 1',
-                 f"{len(panels)} panels, {n_bars} bar sets ({dist_note} from the distribution-steel note) × {allow:g}", bot, 'kg'),
+        steps.append(Step('Bottom bars, panel by panel', 'Σ nos × drawn length × (1 + allowance) × d²/162, nos = ⌊width / spacing⌋ + 1',
+                          f"{len(panels)} panels, {n_bars} bar sets ({dist_note} from the distribution-steel note) × {allow:g}", bot, 'kg'))
+        return dict(bottom_kg=bot, method='panels', panels=rows, bottom_by_dia={k: round(v, 3) for k, v in sorted(by_dia.items())},
+                    panel_sqft=round(sum(p['area_sqft'] for p in panels), 1))
+
+    def top_average(self, beams_out: list, steps: list) -> dict:
+        a = self.a
+        span_len = sum(b['clear_in'] for b in beams_out if b['kind'] == 'S') * IN / 1000
+        top_per_m = 1000 / (a['slab_top_sp_in'] * IN)
+        top_len = (2 * a['slab_top_ext_in'] + 9) * IN + 2 * 12 * 8
+        top = span_len * top_per_m * top_len / 1000 * unit_wt(8)
+        dist = span_len * 2 * math.ceil(a['slab_top_ext_in'] / a['slab_dist_sp_in']) * unit_wt(8)
+        steps += [
             Step('Beam length carrying top bars', 'Σ clear spans of span beams', f"{span_len:.2f} m", span_len, 'm'),
             Step('Top bar length', '(2 × extension + 9″) × 25.4 + 2 × 12d', f"(2 × {a['slab_top_ext_in']:g} + 9) × 25.4 + 192", top_len, 'mm'),
             Step('Top bars over beams', 'beam length × bars/m × bar length × 0.395',
                  f"{span_len:.2f} × {top_per_m:.3f} × {top_len / 1000:.3f} × 0.395", top, 'kg'),
             Step('Top distribution bars', 'beam length × 2 sides × ⌈extension / spacing⌉ × 0.395',
-                 f"{span_len:.2f} × 2 × ⌈{a['slab_top_ext_in']:g} / {a['slab_dist_sp_in']:g}⌉ × 0.395", dist, 'kg'),
-        ]
-        return dict(net_sqft=net, area_m2=m2, concrete_m3=conc + extra, bottom_kg=bot, top_kg=top, dist_kg=dist,
-                    kg=bot + top + dist, steps=[x.json() for x in steps], method='panels', panels=rows,
-                    bottom_by_dia={k: round(v, 3) for k, v in sorted(by_dia.items())},
-                    panel_sqft=round(sum(p['area_sqft'] for p in panels), 1))
+                 f"{span_len:.2f} × 2 × ⌈{a['slab_top_ext_in']:g} / {a['slab_dist_sp_in']:g}⌉ × 0.395", dist, 'kg')]
+        return dict(top_kg=top, dist_kg=dist, top_method='average')
+
+    def top_by_group(self, groups: list, distribution: list | None, steps: list) -> dict:
+        """Top bars as drawn on the top-slab sheet: each group's bars (⌊line / spacing⌋ + 1 along the beam) take the
+        drawn length of their shape (extension + beam) plus a 12d hook each end; alternate shapes on one line share its
+        bars. Distribution bars run along the line across the longest drawn extension (less a 9″ beam), at the sheet's
+        distribution steel (else the project's distribution spacing in 8φ)."""
+        a = self.a
+        dd, ds = distribution or (8, a['slab_dist_sp_in'])
+        top, dist, by_dia, n_shapes = 0.0, 0.0, {}, 0
+        for g in groups:
+            for sh in g['shapes']:
+                k = sh['nos'] * (sh['length_in'] * IN + 2 * 12 * g['dia']) / 1000 * unit_wt(g['dia'])
+                top += k
+                by_dia[g['dia']] = by_dia.get(g['dia'], 0) + k
+                n_shapes += 1
+            ext = max(0.0, max(sh['length_in'] for sh in g['shapes']) - 9)
+            dist += math.ceil(ext / ds) * g['line_in'] * IN / 1000 * unit_wt(dd)
+        steps += [
+            Step('Top bars over beams, as drawn', 'Σ nos × (drawn length + 2 × 12d) × d²/162, nos = ⌊line / spacing⌋ + 1',
+                 f"{len(groups)} bar groups, {n_shapes} drawn bar shapes", top, 'kg'),
+            Step('Top distribution bars, as drawn', f'Σ line length × ⌈(longest drawn bar − 9″) / {ds:g}″⌉ × {unit_wt(dd):.3f}',
+                 f"{len(groups)} groups, K{dd}@{ds:g}″", dist, 'kg')]
+        return dict(top_kg=top, dist_kg=dist, top_method='drawn', top_groups=len(groups),
+                    top_by_dia={k: round(v, 3) for k, v in sorted(by_dia.items())}, dist_dia=dd)
 
     # ---------------- totals ----------------
     def run(self) -> dict:
@@ -264,7 +279,10 @@ class Calc:
                 by_beam[d] += v
         rows, steel_cost = [], 0.0
         slab_dia = dict(slab.get('bottom_by_dia') or {8: slab['bottom_kg']})
-        slab_dia[8] = slab_dia.get(8, 0) + slab['top_kg'] + slab['dist_kg']      # top and distribution bars: 8φ
+        for d, v in (slab.get('top_by_dia') or {8: slab['top_kg']}).items():
+            slab_dia[d] = slab_dia.get(d, 0) + v
+        dd = slab.get('dist_dia', 8)
+        slab_dia[dd] = slab_dia.get(dd, 0) + slab['dist_kg']
         for d in DIAS:
             sl = slab_dia.get(d, 0.0)
             tot = by_beam[d] + sl

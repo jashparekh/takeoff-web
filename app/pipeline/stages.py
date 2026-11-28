@@ -35,7 +35,7 @@ from . import ocr, pdf
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
-SLAB_VERSION = 1
+SLAB_VERSION = 2                 # 2: top-slab sheets (bars over beams)
 LAYOUT_VERSION = 7               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans through crossings; 6: settled label names; 7: schedule settles cantilevers
 
 log = logging.getLogger('takeoff.pipeline')
@@ -358,8 +358,10 @@ def slab(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None
     distribution-steel note, and its thickness note. Panels a person decided on are kept; the pipeline's own previous
     reading of this sheet is replaced."""
     s = db.get(Sheet, sheet_id)
-    if s is None or s.sheet_type != 'slab_bottom' or not s.pt_per_in:
+    if s is None or s.sheet_type not in ('slab_bottom', 'slab_top') or not s.pt_per_in:
         return
+    if s.sheet_type == 'slab_top':
+        return slab_top(db, storage, s, final=final)
     try:
         with job(db, 'slab', s.id, f'{s.page_hash}:v{SLAB_VERSION}:{s.pt_per_in:.4f}', s.project_id,
                  final=final, sheet_id=s.id):
@@ -387,6 +389,35 @@ def slab(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None
             s.slab_version = SLAB_VERSION
             d = f'K{r.distribution[0]}@{r.distribution[1]}"' if r.distribution else 'none found'
             s.layout_note = (f'{len(r.panels)} panels from {r.callouts} bar callouts ({r.hairlines} bar lines); '
+                             f'distribution steel {d}.')
+    except Skip:
+        return
+
+
+def slab_top(db: Session, storage: Storage, s: Sheet, *, final: bool = True) -> None:
+    """Top-slab sheet: each group of top bars over a beam (its callout, the line along the beam, the drawn bar
+    shapes) as a `panel` member named T1, T2… with `data.top`; checked in Review like the bottom panels."""
+    try:
+        with job(db, 'slab', s.id, f'{s.page_hash}:v{SLAB_VERSION}:{s.pt_per_in:.4f}', s.project_id,
+                 final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                r = slb.read_top(f.name, s.page_no, s.pt_per_in)
+            db.refresh(s)
+            db.query(Member).filter(Member.sheet_id == s.id, Member.kind == 'panel', Member.status == 'auto').delete()
+            kept = db.scalars(select(Member).where(Member.sheet_id == s.id, Member.kind == 'panel')).all()
+            for i, t in enumerate(r.groups, 1):
+                if any(slb.overlap((k.x1, k.y1, k.x2, k.y2), t.rect) > 0.6 for k in kept):
+                    continue
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='panel', name=f'T{i}',
+                              vertical=t.callout.vertical, x1=t.rect[0], y1=t.rect[1], x2=t.rect[2], y2=t.rect[3],
+                              confidence=0.8 if t.callout.reads > 1 else 0.6,
+                              note='Alternate bar shapes share the bars.' if len(t.shapes) > 1 else None,
+                              data=dict(top=t.json(), distribution=list(r.distribution) if r.distribution else None)))
+            db.flush()
+            checks.run(db, s.project_id)
+            s.slab_version = SLAB_VERSION
+            d = f'K{r.distribution[0]}@{r.distribution[1]}"' if r.distribution else 'none found'
+            s.layout_note = (f'{len(r.groups)} top bar groups from {r.callouts} callouts ({r.dots} bar marks); '
                              f'distribution steel {d}.')
     except Skip:
         return

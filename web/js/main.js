@@ -622,8 +622,8 @@ function slab() {
       ${sl.panels.map(p => { const bar = v => { const b = p.bars.find(x => x.vertical === v); return b ? `<span class="mono">${b.nos} × K${b.dia}@${fx(b.sp, 1)}" × ${ftIn(b.length_in)}</span>${b.source === 'callout' ? '' : ' <span class="muted small">(distribution)</span>'}` : '—'; };
         return `<tr><td><b>${esc(p.name)}</b></td><td>${bar(false)}</td><td>${bar(true)}</td><td class="num">${p.thk_in ? `${fx(p.thk_in)}″` : '—'}</td><td class="num">${fx(p.kg, 1)}</td></tr>`; }).join('')}
       </tbody></table></div></section>
-      <section class="panel pad small muted">Bottom bars are read panel by panel off the bottom slab layout: each panel's callouts, with the drawing's distribution-steel note for a direction a panel does not call out. Top bars over beams are still measured by average spacing until the top slab layout is read panel by panel. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`
-    : `<section class="panel pad small muted">The slab is measured with average spacings read off the bottom and top slab layouts, not panel by panel. Once the bottom slab layout has been uploaded and its panels checked in <a href="${P}review">Review</a>, the bottom bars are measured panel by panel. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`}
+      <section class="panel pad small muted">Bottom bars are read panel by panel off the bottom slab layout: each panel's callouts, with the drawing's distribution-steel note for a direction a panel does not call out. ${sl.top_method === 'drawn' ? `Top bars over beams are read off the top slab layout as drawn (${sl.top_groups} bar groups).` : 'Top bars over beams are measured by average spacing until the top slab layout has been read and checked in Review.'} Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`
+    : `<section class="panel pad small muted">${sl.top_method === 'drawn' ? `Top bars over beams are read off the top slab layout as drawn (${sl.top_groups} bar groups). The bottom mesh` : 'The slab'} is measured with average spacings read off the slab layouts, not panel by panel. Once the bottom slab layout has been uploaded and its panels checked in <a href="${P}review">Review</a>, the bottom bars are measured panel by panel. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`}
   </div><div class="stack">
     <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabbot.drg)} bottom</h2><a class="small" href="${P}drawings/slabbot">Open</a></div><div class="mini" id="m1" style="height:300px"></div></section>
     <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabtop.drg)} top</h2><a class="small" href="${P}drawings/slabtop">Open</a></div><div class="mini" id="m2" style="height:300px"></div></section>
@@ -1172,7 +1172,7 @@ async function rvShow() {
   const box = m.label_box, cx = m.placed ? (m.x1 + m.x2) / 2 : (box ? (box[0] + box[2]) / 2 : m.x1), cy = m.placed ? (m.y1 + m.y2) / 2 : (box ? (box[1] + box[3]) / 2 : m.y1);
   requestAnimationFrame(() => RV.vw.focus(cx, cy, 3.2));
   rvDraw();
-  const kind = { column: 'Column', panel: 'Slab panel' }[m.kind] || 'Beam';
+  const kind = m.data?.top ? 'Top bars' : ({ column: 'Column', panel: 'Slab panel' }[m.kind] || 'Beam');
   const barRow = b => `<tr><td>${b.vertical ? 'Up/down the sheet' : 'Across the sheet'}</td><td class="mono">K${b.dia}@${fx(b.sp, 1)}"</td><td class="num">${b.nos}</td><td class="mono">${ftIn(b.length_in)}</td><td class="small muted">${b.source === 'callout' ? 'callout' : 'distribution note'}</td></tr>`;
   const dis = RV.canEdit ? '' : 'disabled';
   form.innerHTML = `
@@ -1183,9 +1183,12 @@ async function rvShow() {
     <dl class="kv small">
       ${m.kind === 'beam' ? `<dt>Drawn width</dt><dd>${m.b_in ? `${fx(m.b_in, 1)}"` : '—'}</dd><dt>Span (centre to centre)</dt><dd>${ftIn(m.length_in)}</dd><dt>Direction</dt><dd>${m.placed ? (m.vertical ? 'Vertical on sheet' : 'Horizontal on sheet') : '—'}</dd>`
         : `<dt>Size as drawn</dt><dd>${m.sheet.pt_per_in ? `${ftIn((m.x2 - m.x1) / m.sheet.pt_per_in)} × ${ftIn((m.y2 - m.y1) / m.sheet.pt_per_in)}` : '—'}</dd>
-           ${m.kind === 'panel' ? `<dt>Area</dt><dd>${fx(m.area_sqft)} sq ft</dd>${m.data?.thk_in ? `<dt>Thickness note</dt><dd>${fx(m.data.thk_in)}"</dd>` : ''}` : ''}`}
+           ${m.kind === 'panel' && !m.data?.top ? `<dt>Area</dt><dd>${fx(m.area_sqft)} sq ft</dd>${m.data?.thk_in ? `<dt>Thickness note</dt><dd>${fx(m.data.thk_in)}"</dd>` : ''}` : ''}`}
     </dl>
-    ${m.kind === 'panel' && m.data?.bars?.length ? `<div class="tw"><table class="small"><thead><tr><th>Bars run</th><th>Bar</th><th class="r">Nos</th><th>Length</th><th>From</th></tr></thead><tbody>${m.data.bars.map(barRow).join('')}</tbody></table></div>
+    ${m.data?.top ? (t => `<dl class="kv small"><dt>Bars</dt><dd class="mono">K${t.dia}@${fx(t.sp, 1)}" · ${t.nos} along ${ftIn(t.line_in)}</dd>
+      ${t.shapes.map((sh, i) => `<dt>${t.shapes.length > 1 ? `Shape ${i + 1}` : 'Drawn bar'}</dt><dd>${ftIn(sh.length_in)} (extension + beam) · ${fx(sh.nos, 1)} bars</dd>`).join('')}</dl>
+      <p class="small muted">The bars are spaced along the callout line; each runs across the beam as drawn, out to its end in the panel.${t.shapes.length > 1 ? ' The line has alternate bar shapes, which share its bars.' : ''}</p>`)(m.data.top) : ''}
+    ${m.kind === 'panel' && !m.data?.top && m.data?.bars?.length ? `<div class="tw"><table class="small"><thead><tr><th>Bars run</th><th>Bar</th><th class="r">Nos</th><th>Length</th><th>From</th></tr></thead><tbody>${m.data.bars.map(barRow).join('')}</tbody></table></div>
       <p class="small muted">Lengths are the drawn bar lines; numbers are the panel width ÷ spacing + 1. Check the outline and the callouts against the sheet.</p>` : ''}
     ${m.kind === 'beam' ? `<form id="rvEdit" class="stack small">
       <label class="stack">Name<input class="f" name="name" value="${esc(m.name || '')}" ${dis} autocomplete="off"></label>

@@ -195,7 +195,7 @@ def check_slab_thickness(ctx: Ctx) -> dict:
     t = next((a.value for a in ctx.project.assumptions if a.key == 'slab_t_in'), BY_KEY['slab_t_in'].default)
     out = {}
     for p in ctx.panels:
-        thk = (p.data or {}).get('thk_in')
+        thk = (p.data or {}).get('thk_in') if 'bars' in (p.data or {}) else None
         if thk and t and thk != t and p.status != 'rejected':
             s = ctx.db.get(Sheet, p.sheet_id)
             drg = (s.drg_no if s else None) or 'the bottom slab layout'
@@ -216,10 +216,11 @@ def check_slab_waiting(ctx: Ctx) -> dict:
         return {}
     return {'X-SLAB-AVG': dict(
         severity='low', kind='Waiting for Review', beams=[],
-        title=f'{len(waiting)} slab panel{"s" if len(waiting) != 1 else ""} read but not yet checked',
-        detail='The bottom slab is read panel by panel, but the readings are used only once every panel is checked '
-               'in Review. Until then the slab bottom bars are measured by average spacing.',
-        affects='Slab steel', assumption=f'Average spacing for the slab bottom mesh',
+        title=f'{len(waiting)} slab reading{"s" if len(waiting) != 1 else ""} (panels, top bar groups) not yet checked',
+        detail='The slab sheets are read panel by panel (bottom) and group by group (top bars over beams), but each '
+               'sheet\'s readings are used only once all of them are checked in Review. Until then that part of the '
+               'slab is measured by average spacing.',
+        affects='Slab steel', assumption='Average spacing for the slab parts not yet checked',
         ask='Check the slab panels in Review.')}
 
 
