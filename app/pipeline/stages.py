@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..services import checks
+from ..services import checks, revisions
+from ..services.revisions import live
 from ..db.models import Bar, BeamSpec, Building, Floor, Job, Member, Sheet, Upload
 from ..settings import get_settings
 from ..storage import Storage, sheet_key
@@ -181,6 +182,7 @@ def classify(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
             s.drg_no, s.title, s.revision, s.scale_text, s.drawn_on = tb.drg_no, tb.title, tb.revision, tb.scale, tb.date
             s.sheet_type, s.floor_id = r.sheet_type, r.floor_id
             s.classify_status, s.classify_note = r.status, r.note
+            revisions.link(db, s)                         # a later revision of a drawing supersedes the earlier one
     except Skip:
         return
     except Exception:
@@ -261,7 +263,7 @@ def schedule_cants(db: Session, s: Sheet) -> dict[str, bool] | None:
     """What the schedules read for this layout's floor say about cantilevers: beam → has a cantilever part. None until
     a schedule is read. Specs a person rejected, and repeats, do not count."""
     q = select(BeamSpec.name).where(BeamSpec.project_id == s.project_id, BeamSpec.status != 'rejected',
-                                    BeamSpec.duplicate_of.is_(None))
+                                    BeamSpec.duplicate_of.is_(None), BeamSpec.sheet_id.in_(live()))
     if s.floor_id:
         q = q.where((BeamSpec.floor_id == s.floor_id) | BeamSpec.floor_id.is_(None))
     names = set(db.scalars(q))
@@ -292,7 +294,7 @@ def layouts_on_floor(db: Session, project_id, floor_id) -> list:
 def layout_sheets_for(db: Session, schedule_sheet_id) -> list:
     """Beam layouts whose reading depends on this schedule sheet (same project, same floor or no floor set)."""
     s = db.get(Sheet, schedule_sheet_id)
-    if s is None or s.sheet_type != 'beam_schedule':
+    if s is None or s.superseded_by or s.sheet_type != 'beam_schedule':
         return []
     return layouts_on_floor(db, s.project_id, s.floor_id)
 
@@ -303,7 +305,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
     kept; the pipeline's own previous reading of this sheet is replaced. Once the floor's schedule is read it settles
     which overhangs are cantilevers, so the layout is read again when that changes (the job key includes it)."""
     s = db.get(Sheet, sheet_id)
-    if s is None or s.sheet_type != 'beam_layout' or not s.pt_per_in:
+    if s is None or s.superseded_by or s.sheet_type != 'beam_layout' or not s.pt_per_in:
         return
     try:
         cants = schedule_cants(db, s)
@@ -338,6 +340,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                               label_b_in=u.b_in, label_d_in=u.d_in, confidence=0,
                               note='Label read, but no beam found next to it.'))
             db.flush()
+            carried = revisions.carry_over(db, s)        # people's decisions from the revision this replaces
             checks.run(db, s.project_id)
             names = {b.name for b in r.beams if not b.cantilever}
             cants = sum(1 for b in r.beams if b.cantilever)
@@ -349,6 +352,7 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                                 f'{"their spans" if len(r.joined) != 1 else "its span"} (none in the schedule)'
                                 if r.joined else '')
                              + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
+            s.layout_note += revisions.carried_note(carried)
     except Skip:
         return
 
@@ -358,7 +362,7 @@ def slab(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None
     distribution-steel note, and its thickness note. Panels a person decided on are kept; the pipeline's own previous
     reading of this sheet is replaced."""
     s = db.get(Sheet, sheet_id)
-    if s is None or s.sheet_type not in ('slab_bottom', 'slab_top') or not s.pt_per_in:
+    if s is None or s.superseded_by or s.sheet_type not in ('slab_bottom', 'slab_top') or not s.pt_per_in:
         return
     if s.sheet_type == 'slab_top':
         return slab_top(db, storage, s, final=final)
@@ -385,11 +389,13 @@ def slab(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None
                               confidence=0.8 if both else 0.6, note=' '.join(notes) or None,
                               data=dict(bars=[b.json() for b in p.bars], thk_in=p.thk_in)))
             db.flush()
+            carried = revisions.carry_over(db, s)        # people's decisions from the revision this replaces
             checks.run(db, s.project_id)
             s.slab_version = SLAB_VERSION
             d = f'K{r.distribution[0]}@{r.distribution[1]}"' if r.distribution else 'none found'
             s.layout_note = (f'{len(r.panels)} panels from {r.callouts} bar callouts ({r.hairlines} bar lines); '
                              f'distribution steel {d}.')
+            s.layout_note += revisions.carried_note(carried)
     except Skip:
         return
 
@@ -414,11 +420,13 @@ def slab_top(db: Session, storage: Storage, s: Sheet, *, final: bool = True) -> 
                               note='Alternate bar shapes share the bars.' if len(t.shapes) > 1 else None,
                               data=dict(top=t.json(), distribution=list(r.distribution) if r.distribution else None)))
             db.flush()
+            carried = revisions.carry_over(db, s)        # people's decisions from the revision this replaces
             checks.run(db, s.project_id)
             s.slab_version = SLAB_VERSION
             d = f'K{r.distribution[0]}@{r.distribution[1]}"' if r.distribution else 'none found'
             s.layout_note = (f'{len(r.groups)} top bar groups from {r.callouts} callouts ({r.dots} bar marks); '
                              f'distribution steel {d}.')
+            s.layout_note += revisions.carried_note(carried)
     except Skip:
         return
 
@@ -437,8 +445,9 @@ def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
             db.refresh(s)
             db.query(BeamSpec).filter(BeamSpec.sheet_id == s.id, BeamSpec.status == 'auto').delete()
             kept = set(db.scalars(select(BeamSpec.name).where(BeamSpec.sheet_id == s.id)))
-            others = {b.name: b for b in db.scalars(select(BeamSpec).where(
-                BeamSpec.project_id == s.project_id, BeamSpec.sheet_id != s.id, BeamSpec.duplicate_of.is_(None)))}
+            others = {b.name: b for b in db.scalars(select(BeamSpec).where(     # not the revision this one replaced
+                BeamSpec.project_id == s.project_id, BeamSpec.sheet_id != s.id, BeamSpec.duplicate_of.is_(None),
+                BeamSpec.sheet_id.in_(live())))}
             repeats, n = [], 0
             for e in r.elevations:
                 name = sch.part_name(e, r.elevations)
@@ -457,10 +466,12 @@ def schedule(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> 
                 db.add(spec)
                 n += 1
             db.flush()
+            carried = revisions.carry_over(db, s)        # people's decisions from the revision this replaces
             checks.run(db, s.project_id)
             s.schedule_version = SCHEDULE_VERSION
             s.layout_note = (f'{n} beam elevations read' + (f'; {len(repeats)} repeat another sheet' if repeats else '')
                              + '.')
+            s.layout_note += revisions.carried_note(carried)
     except Skip:
         return
 

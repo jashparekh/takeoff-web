@@ -251,6 +251,7 @@ class Sheet(Base):
     layout_schedule: Mapped[str | None] = mapped_column(String(16))   # schedule cantilevers it was read with (hash)
     schedule_version: Mapped[int | None] = mapped_column(Integer)     # schedule reader version that produced specs
     slab_version: Mapped[int | None] = mapped_column(Integer)         # slab reader version that produced panels
+    superseded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('sheets.id', ondelete='SET NULL'))  # later revision
     created_at: Mapped[datetime] = created()
     upload: Mapped[Upload] = relationship(back_populates='sheets')
     __table_args__ = (UniqueConstraint('project_id', 'page_hash'),

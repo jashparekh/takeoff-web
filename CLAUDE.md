@@ -149,6 +149,15 @@ Product rules (non-negotiable):
   top 1,087 vs 1,207 kg averaged, distribution 656 vs 1,009, slab 3,362 vs 3,894 (−13.7%): the workbook assumed 2'-6"
   extensions both sides of every span beam (four distribution bars a side); drawn they are mostly 2'-0", only where
   called out, one side at edge beams. Decision (Jash, Nov 2026): the slab counts as drawn, not the workbook average.
+- Revisions (M5 PR 3): `app/services/revisions.py`. After classify, `link` makes the higher revision of the same
+  drawing number (spaces ignored; R0 < R1, A < B, plain numbers) supersede the lower (`sheets.superseded_by`, migration
+  0014), whichever arrives first; same or unreadable revisions are both kept with a note. Superseded sheets keep their
+  readings but count nowhere: every member / spec query goes through `live()` (inputs, checks, Review, 3D model,
+  schedule cantilevers, schedule repeats), and the reading stages skip them. At the end of the layout, schedule and slab
+  stages `carry_over` matches the old revision's checked items to the new reading (beams by name and midpoint ≤ 30 pt,
+  panels by overlap, specs by name): reads the same → the person's decision carries over (noted "Same as checked on
+  R0"); changed → left in Review at confidence ≤ 0.3 with "Changed since R0: …"; rejected → rejected again; added by a
+  person and not read on the new one → carried as added. The stage note counts them; Add drawings shows "Replaced".
 - `app/services/model_builder.py` — the 3D model from `members` (same shape as `model.json` plus `b_in`, `D_in`,
   `floors`, `level`, `floor_h`); `GET /api/projects/{pid}` serves it, falling back to the pilot's `model.json`. The 3D
   view opens without a calculation (element colours; sizes from labels; slab drawn 5″ for the picture only).
