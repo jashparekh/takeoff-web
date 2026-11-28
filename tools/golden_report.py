@@ -117,6 +117,30 @@ def span_report(lay, inputs) -> dict:
         spans_compared=len(plain))
 
 
+SLAB_BOTTOM = DATA / 'source' / '260919_SF_BOTTOM SLAB REINFORCEMENT LAYOUT.pdf'
+
+
+def slab_report(pt_per_in: float) -> dict:
+    """Bottom slab panel by panel against the averaged method (plan M5 golden: within ±3%, difference explained)."""
+    from app.engine import Calc
+    from app.pipeline.slab import read_slab
+    t = time.time()
+    r = read_slab(str(SLAB_BOTTOM), 1, pt_per_in)
+    inputs = json.loads((DATA / 'inputs.json').read_text())
+    avg = Calc(inputs).run()['slab']
+    panels = [dict(name=f'P{i}', area_sqft=p.size_in(pt_per_in)[0] * p.size_in(pt_per_in)[1] / 144, thk_in=p.thk_in,
+                   bars=[b.json() for b in p.bars]) for i, p in enumerate(r.panels, 1)]
+    per = Calc({**inputs, 'slab': {**inputs['slab'], 'panels': panels}}).run()['slab']
+    return dict(seconds=round(time.time() - t, 1), callouts=r.callouts, bar_lines=r.hairlines, panels=len(r.panels),
+                both_directions=sum(1 for p in r.panels if len({c.vertical for c in p.callouts}) == 2),
+                distribution=r.distribution, thick_panels=[(f'P{i}', p.thk_in) for i, p in enumerate(r.panels, 1) if p.thk_in],
+                panel_sqft=round(sum(p['area_sqft'] for p in panels)), net_sqft=round(avg['net_sqft']),
+                bottom_kg_panels=round(per['bottom_kg']), bottom_kg_average=round(avg['bottom_kg']),
+                bottom_diff_pct=round((per['bottom_kg'] / avg['bottom_kg'] - 1) * 100, 1),
+                slab_kg_panels=round(per['kg']), slab_kg_average=round(avg['kg']),
+                slab_diff_pct=round((per['kg'] / avg['kg'] - 1) * 100, 1))
+
+
 SCHEDULES = sorted((DATA / 'source').glob('*BEAM SCHEDULE*.pdf'))
 
 
@@ -222,10 +246,13 @@ def main(argv=None):
     ap.add_argument('--json')
     ap.add_argument('--schedules', action='store_true', help='also read the beam schedules')
     ap.add_argument('--vision-replay', action='store_true', help='schedules with recorded vision readings')
+    ap.add_argument('--slab', action='store_true', help='also read the bottom slab panel by panel')
     a = ap.parse_args(argv)
     r = report(a.pt_per_in)
     if a.schedules:
         r.update({f'schedule_{k}': v for k, v in schedule_report().items()})
+    if a.slab:
+        r.update({f'slab_{k}': v for k, v in slab_report(a.pt_per_in).items()})
     if a.vision_replay:
         r.update({f'vision_{k}': v for k, v in vision_report().items()})
     for k, v in r.items():

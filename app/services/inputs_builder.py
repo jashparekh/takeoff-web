@@ -100,7 +100,28 @@ def build_inputs(project: Project) -> dict:
     if not s.get('slab'):
         # Slab openings and chajjas come from the slab layouts, read in M5.
         raise NotReady('Not ready to calculate: the slab layouts have not been read yet.')
-    return dict(assumptions=assumptions_list(project), beams=beams, chajja=s.get('chajja'), slab=s['slab'])
+    slab = dict(s['slab'])
+    panels = slab_panels(db, f) if db is not None else None
+    if panels:
+        slab['panels'] = panels
+    return dict(assumptions=assumptions_list(project), beams=beams, chajja=s.get('chajja'), slab=slab)
+
+
+def slab_panels(db: Session, floor: Floor) -> list[dict] | None:
+    """The floor's bottom-slab panels as the engine takes them, once every panel read has been checked in Review
+    (until then the slab is measured by average spacing, shown as an assumption)."""
+    ps = db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'panel',
+                                         Member.status != 'rejected')).all()
+    if not ps or any(p.status not in CHECKED for p in ps):
+        return None
+    return [dict(name=p.name, area_sqft=p.area_sqft, thk_in=(p.data or {}).get('thk_in'),
+                 bars=(p.data or {}).get('bars', [])) for p in sorted(ps, key=lambda p: natural(p.name))]
+
+
+def panels_waiting(db: Session, floor: Floor) -> int:
+    """Panels read but not yet checked in Review."""
+    return len(db.scalars(select(Member.id).where(Member.floor_id == floor.id, Member.kind == 'panel',
+                                                  Member.status == 'auto')).all())
 
 
 def calculate(project: Project, overrides: dict | None = None) -> dict:

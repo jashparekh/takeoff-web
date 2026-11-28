@@ -29,11 +29,13 @@ from . import layout as lay
 from . import reconcile as rec
 from . import vision as vis
 from . import schedule as sch
+from . import slab as slb
 from . import ocr, pdf
 
 CLASSIFY_VERSION = 2             # bump when the title-block reader changes, so sheets are read again
 CALIBRATE_VERSION = 1
 SCHEDULE_VERSION = 1
+SLAB_VERSION = 1
 LAYOUT_VERSION = 7               # 2: cantilevers and slab outline; 3: clear spans; 4: drawn dimensions; 5: spans through crossings; 6: settled label names; 7: schedule settles cantilevers
 
 log = logging.getLogger('takeoff.pipeline')
@@ -347,6 +349,45 @@ def layout(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> No
                                 f'{"their spans" if len(r.joined) != 1 else "its span"} (none in the schedule)'
                                 if r.joined else '')
                              + (f'; floor plate {r.outline.area_sqft:,.0f} sq ft.' if r.outline else '.'))
+    except Skip:
+        return
+
+
+def slab(db: Session, storage: Storage, sheet_id, *, final: bool = True) -> None:
+    """Read a bottom-slab sheet into `panel` members (M5): each panel's bars, both ways, from its callouts or the
+    distribution-steel note, and its thickness note. Panels a person decided on are kept; the pipeline's own previous
+    reading of this sheet is replaced."""
+    s = db.get(Sheet, sheet_id)
+    if s is None or s.sheet_type != 'slab_bottom' or not s.pt_per_in:
+        return
+    try:
+        with job(db, 'slab', s.id, f'{s.page_hash}:v{SLAB_VERSION}:{s.pt_per_in:.4f}', s.project_id,
+                 final=final, sheet_id=s.id):
+            with fetch(storage, s.upload.storage_key) as f:
+                r = slb.read_slab(f.name, s.page_no, s.pt_per_in)
+            db.refresh(s)
+            db.query(Member).filter(Member.sheet_id == s.id, Member.kind == 'panel', Member.status == 'auto').delete()
+            kept = db.scalars(select(Member).where(Member.sheet_id == s.id, Member.kind == 'panel')).all()
+            for i, p in enumerate(r.panels, 1):
+                if any(slb.overlap((k.x1, k.y1, k.x2, k.y2), p.rect) > 0.6 for k in kept):
+                    continue                              # a person already decided about this panel
+                both = len({c.vertical for c in p.callouts}) == 2
+                notes = []
+                if not both and p.bars:
+                    notes.append('One direction from the distribution-steel note.')
+                if p.thk_in:
+                    notes.append(f'Marked {p.thk_in:g}" thick.')
+                db.add(Member(project_id=s.project_id, sheet_id=s.id, floor_id=s.floor_id, kind='panel', name=f'P{i}',
+                              x1=p.rect[0], y1=p.rect[1], x2=p.rect[2], y2=p.rect[3],
+                              area_sqft=round(p.size_in(s.pt_per_in)[0] * p.size_in(s.pt_per_in)[1] / 144, 1),
+                              confidence=0.8 if both else 0.6, note=' '.join(notes) or None,
+                              data=dict(bars=[b.json() for b in p.bars], thk_in=p.thk_in)))
+            db.flush()
+            checks.run(db, s.project_id)
+            s.slab_version = SLAB_VERSION
+            d = f'K{r.distribution[0]}@{r.distribution[1]}"' if r.distribution else 'none found'
+            s.layout_note = (f'{len(r.panels)} panels from {r.callouts} bar callouts ({r.hairlines} bar lines); '
+                             f'distribution steel {d}.')
     except Skip:
         return
 

@@ -617,7 +617,13 @@ function slab() {
   <div class="grid g-main"><div class="stack">
     <section class="panel"><div class="hd"><h2>How the slab was measured</h2></div><div class="pad stack">${steps(sl.steps)}
       <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="sp">Total slab steel</span><b class="mono">${fx(sl.kg, 1)} kg</b></div></div></section>
-    <section class="panel pad small muted">The slab is measured with average spacings read off the bottom and top slab layouts, not panel by panel. Panel-by-panel reading is planned for the upload pipeline. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>
+    ${sl.method === 'panels' ? `<section class="panel"><div class="hd"><h2>Bottom bars, panel by panel</h2><span class="small muted">${sl.panels.length} panels · ${fx(sl.panel_sqft)} sq ft read from the bottom slab layout</span></div>
+      <div class="tw"><table><thead><tr><th>Panel</th><th>Across the sheet</th><th>Up/down the sheet</th><th class="r">Thickness</th><th class="r">kg</th></tr></thead><tbody>
+      ${sl.panels.map(p => { const bar = v => { const b = p.bars.find(x => x.vertical === v); return b ? `<span class="mono">${b.nos} × K${b.dia}@${fx(b.sp, 1)}" × ${ftIn(b.length_in)}</span>${b.source === 'callout' ? '' : ' <span class="muted small">(distribution)</span>'}` : '—'; };
+        return `<tr><td><b>${esc(p.name)}</b></td><td>${bar(false)}</td><td>${bar(true)}</td><td class="num">${p.thk_in ? `${fx(p.thk_in)}″` : '—'}</td><td class="num">${fx(p.kg, 1)}</td></tr>`; }).join('')}
+      </tbody></table></div></section>
+      <section class="panel pad small muted">Bottom bars are read panel by panel off the bottom slab layout: each panel's callouts, with the drawing's distribution-steel note for a direction a panel does not call out. Top bars over beams are still measured by average spacing until the top slab layout is read panel by panel. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`
+    : `<section class="panel pad small muted">The slab is measured with average spacings read off the bottom and top slab layouts, not panel by panel. Once the bottom slab layout has been uploaded and its panels checked in <a href="${P}review">Review</a>, the bottom bars are measured panel by panel. Spacings and extension are editable in <a href="${P}assumptions">Assumptions</a>.</section>`}
   </div><div class="stack">
     <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabbot.drg)} bottom</h2><a class="small" href="${P}drawings/slabbot">Open</a></div><div class="mini" id="m1" style="height:300px"></div></section>
     <section class="panel"><div class="hd"><h2>${esc(S.sheets.slabtop.drg)} top</h2><a class="small" href="${P}drawings/slabtop">Open</a></div><div class="mini" id="m2" style="height:300px"></div></section>
@@ -938,7 +944,8 @@ async function showMembers(vw, s) {
   const plates = ms.filter(m => m.kind === 'slab_panel' && m.points);
   vw.setOverlay(plates.map(m => `<polygon points="${m.points.map(p => p.join(',')).join(' ')}" class="plate"/>`).join('') +
     beams.map(m => `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="${confColor(m.confidence)}"/>`).join('') +
-    cols.map(m => `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}"/>`).join(''));
+    cols.map(m => `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}"/>`).join('') +
+    ms.filter(m => m.kind === 'panel').map(m => `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}" style="stroke:${confColor(m.confidence)};fill:${confColor(m.confidence)};fill-opacity:.08"><title>${esc(m.name)}: ${(m.data?.bars || []).map(b => `K${b.dia}@${b.sp}"`).join(' × ')}${m.data?.thk_in ? ` · ${m.data.thk_in}" thick` : ''}</title></rect>`).join(''));
   const byId = Object.fromEntries(ms.map(m => [m.id, m]));
   vw.setHotspots([...beams, ...lost].filter(m => m.label_box).map(m => ({
     id: m.id, label: m.name, color: m.placed ? confColor(m.confidence) : '#B42318',
@@ -1165,17 +1172,21 @@ async function rvShow() {
   const box = m.label_box, cx = m.placed ? (m.x1 + m.x2) / 2 : (box ? (box[0] + box[2]) / 2 : m.x1), cy = m.placed ? (m.y1 + m.y2) / 2 : (box ? (box[1] + box[3]) / 2 : m.y1);
   requestAnimationFrame(() => RV.vw.focus(cx, cy, 3.2));
   rvDraw();
-  const kind = m.kind === 'column' ? 'Column' : 'Beam';
+  const kind = { column: 'Column', panel: 'Slab panel' }[m.kind] || 'Beam';
+  const barRow = b => `<tr><td>${b.vertical ? 'Up/down the sheet' : 'Across the sheet'}</td><td class="mono">K${b.dia}@${fx(b.sp, 1)}"</td><td class="num">${b.nos}</td><td class="mono">${ftIn(b.length_in)}</td><td class="small muted">${b.source === 'callout' ? 'callout' : 'distribution note'}</td></tr>`;
   const dis = RV.canEdit ? '' : 'disabled';
   form.innerHTML = `
     <div class="row between"><h2>${kind} ${esc(m.name || '')}</h2><span class="small muted">${RV.i + 1} of ${RV.q.items.length} to check</span></div>
     <div class="small">${esc(m.sheet.drg_no || '')} · <span style="color:${confColor(m.confidence)}">confidence ${fx(m.confidence * 100)}%</span></div>
-    ${m.note && m.placed ? `<div class="note warn small">${esc(m.note)}</div>` : ''}
+    ${m.note && m.placed ? `<div class="note ${m.kind === 'panel' ? '' : 'warn'} small">${esc(m.note)}</div>` : ''}
     ${!m.placed ? '<div class="note warn small">The label was read but no beam was found next to it. Redraw it on the sheet, or mark it not on the drawing.</div>' : ''}
     <dl class="kv small">
       ${m.kind === 'beam' ? `<dt>Drawn width</dt><dd>${m.b_in ? `${fx(m.b_in, 1)}"` : '—'}</dd><dt>Span (centre to centre)</dt><dd>${ftIn(m.length_in)}</dd><dt>Direction</dt><dd>${m.placed ? (m.vertical ? 'Vertical on sheet' : 'Horizontal on sheet') : '—'}</dd>`
-        : `<dt>Size as drawn</dt><dd>${m.sheet.pt_per_in ? `${fx((m.x2 - m.x1) / m.sheet.pt_per_in, 0)}" × ${fx((m.y2 - m.y1) / m.sheet.pt_per_in, 0)}"` : '—'}</dd>`}
+        : `<dt>Size as drawn</dt><dd>${m.sheet.pt_per_in ? `${ftIn((m.x2 - m.x1) / m.sheet.pt_per_in)} × ${ftIn((m.y2 - m.y1) / m.sheet.pt_per_in)}` : '—'}</dd>
+           ${m.kind === 'panel' ? `<dt>Area</dt><dd>${fx(m.area_sqft)} sq ft</dd>${m.data?.thk_in ? `<dt>Thickness note</dt><dd>${fx(m.data.thk_in)}"</dd>` : ''}` : ''}`}
     </dl>
+    ${m.kind === 'panel' && m.data?.bars?.length ? `<div class="tw"><table class="small"><thead><tr><th>Bars run</th><th>Bar</th><th class="r">Nos</th><th>Length</th><th>From</th></tr></thead><tbody>${m.data.bars.map(barRow).join('')}</tbody></table></div>
+      <p class="small muted">Lengths are the drawn bar lines; numbers are the panel width ÷ spacing + 1. Check the outline and the callouts against the sheet.</p>` : ''}
     ${m.kind === 'beam' ? `<form id="rvEdit" class="stack small">
       <label class="stack">Name<input class="f" name="name" value="${esc(m.name || '')}" ${dis} autocomplete="off"></label>
       <div class="row"><label class="stack grow">Width b (in)<input class="f num" name="b" type="number" step="0.5" value="${m.label_b_in ?? ''}" ${dis}></label>
@@ -1198,11 +1209,11 @@ async function rvShow() {
 function rvDraw() {
   const m = RV.q.items[RV.i]; if (!RV.vw) return;
   const all = RV.members[RV.sheetId] || [];
-  const faint = all.filter(o => !m || o.id !== m.id).map(o => o.kind === 'column'
+  const faint = all.filter(o => !m || o.id !== m.id).map(o => o.kind === 'column' || o.kind === 'panel'
     ? `<rect x="${o.x1}" y="${o.y1}" width="${o.x2 - o.x1}" height="${o.y2 - o.y1}" style="stroke:#9CA3AF"/>`
     : (o.x1 !== o.x2 || o.y1 !== o.y2) ? `<line x1="${o.x1}" y1="${o.y1}" x2="${o.x2}" y2="${o.y2}" stroke="#9CA3AF"/>` : '').join('');
   let cur = '';
-  if (m && m.kind === 'column') cur = `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}" style="stroke:#C2410C;stroke-width:4"/>`;
+  if (m && (m.kind === 'column' || m.kind === 'panel')) cur = `<rect x="${m.x1}" y="${m.y1}" width="${m.x2 - m.x1}" height="${m.y2 - m.y1}" style="stroke:#C2410C;stroke-width:4"/>`;
   else if (m && m.placed) cur = `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="#C2410C" style="stroke-width:5;opacity:.9"/>`;
   if (m && m.label_box) { const [a, b, c, d] = m.label_box; cur += `<rect x="${a - 2}" y="${b - 2}" width="${c - a + 4}" height="${d - b + 4}" style="stroke:#C2410C;stroke-dasharray:3 2"/>`; }
   const picks = RV.picks.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#2563EB"/>`).join('');
