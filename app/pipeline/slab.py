@@ -313,6 +313,20 @@ def dots_on(vec: g.Vectors) -> list[tuple[float, float]]:
     return out
 
 
+def _on(d: tuple, line: tuple, vertical: bool) -> bool:
+    c, a, b = line
+    return (abs(d[0] - c) < 2 and a - 2 <= d[1] <= b + 2) if vertical else (abs(d[1] - c) < 2 and a - 2 <= d[0] <= b + 2)
+
+
+def _line_through(d: tuple, H: list, V: list):
+    """The longest hairline through a mark, and whether it runs up/down the sheet."""
+    best = None
+    for (c, a, b), vert in [(l, False) for l in H] + [(l, True) for l in V]:
+        if b - a > 8 and _on(d, (c, a, b), vert) and (best is None or b - a > best[0][2] - best[0][1]):
+            best = ((c, a, b), vert)
+    return best
+
+
 def read_top(path: str, page_no: int, pt_per_in: float) -> TopReading:
     vec = g.read_vectors(path, page_no)
     edges = g.beam_edges(vec, pt_per_in)
@@ -325,12 +339,45 @@ def read_top(path: str, page_no: int, pt_per_in: float) -> TopReading:
     bH, bV = vec.axis_lines(BAR_W)
     runs_h, runs_v = g.merge_lines(bH, 3.0), g.merge_lines(bV, 3.0)
     out = TopReading(distribution=distribution_note(words), callouts=len(callouts), dots=len(dots))
+    # A mark whose callout was not read sits on a hairline; on this sheet the callout text starts right at the mark,
+    # partway along the line, so read a crop there.
+    big = None
+    for d in dots:
+        if any(_on(d, l, v) for l, v in [(f.line, f.vertical) for f in callouts if f.line]):
+            continue
+        line = _line_through(d, H, V)
+        if not line:
+            continue
+        (c, a, b), vert = line
+        if big is None:
+            big, k = render_only(path, page_no, lw, TARGET_DPI, max_size=GLYPH_PT), TARGET_DPI / 72
+        e = DOT_PT / 2 + 1                 # start past the ring: OCR reads ring + K as one glyph
+        boxes = [(d[0] - 14, d[1] - 80, d[0] + 14, d[1] - e), (d[0] - 14, d[1] + e, d[0] + 14, d[1] + 80)] if vert else \
+                [(d[0] + e, d[1] - 12, d[0] + 80, d[1] + 12), (d[0] - 80, d[1] - 12, d[0] - e, d[1] + 12)]
+        found = None
+        for box in boxes:
+            crop = big.crop(tuple(int(v * k) for v in box))
+            crop = crop.rotate(-90, expand=True) if vert else crop
+            for psm in (7, 11):
+                found = parse_callout(pytesseract.image_to_string(crop, config=f'--psm {psm}'))
+                if found:
+                    break
+            if found:
+                callouts.append(Callout(found[0], found[1], vert, box, (c, a, b)))
+                out.callouts += 1
+                break
+    # Each mark belongs to one callout: the one on whose line it sits with the text nearest (two lines can cross at
+    # a mark, and a line can carry two callouts).
+    owner: dict = {}
+    for d in dots:
+        cands = [f for f in callouts if f.line and _on(d, f.line, f.vertical)]
+        if cands:
+            owner[d] = min(cands, key=lambda f: math.dist(d, ((f.box[0] + f.box[2]) / 2, (f.box[1] + f.box[3]) / 2)))
     for f in callouts:
         if not f.line:
             continue
         c, a, b = f.line
-        on = [d for d in dots if (abs(d[0] - c) < 2 and a - 2 <= d[1] <= b + 2) if f.vertical] if f.vertical else \
-             [d for d in dots if abs(d[1] - c) < 2 and a - 2 <= d[0] <= b + 2]
+        on = [d for d in dots if owner.get(d) is f]
         lengths = []
         for d in on:                      # the drawn bar through the dot, across the callout line
             along = d[1] if f.vertical else d[0]

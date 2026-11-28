@@ -77,12 +77,12 @@ def test_engine_top_bars_as_drawn():
 def test_golden_worklounge_top_slab():
     from tools.golden_report import slab_report
     r = slab_report(0.6)
-    assert r['top_callouts'] >= 95 and r['top_marks'] == 123               # 105 callouts when written
-    assert r['top_groups'] >= 90 and r['top_shapes'] >= 105                # 98 groups, 113 of 123 marks
+    assert r['top_callouts'] >= 110 and r['top_marks'] == 123              # 116 callouts when written
+    assert r['top_groups'] >= 98 and 115 <= r['top_shapes'] <= 123         # 104 groups, 119 of 123 marks (each once)
     assert r['top_distribution'] == (8, 9)
     # As drawn the top bars are shorter and fewer than the workbook's estimate (2'-6" both sides of every span beam):
-    assert 950 <= r['top_kg_drawn'] <= 1200 and 550 <= r['dist_kg_drawn'] <= 750         # 1,059 and 642 when written
-    assert -18 <= r['slab_diff_pct'] <= -10                                               # 3,320 vs 3,894 kg
+    assert 1000 <= r['top_kg_drawn'] <= 1200 and 580 <= r['dist_kg_drawn'] <= 750        # 1,087 and 656 when written
+    assert -16 <= r['slab_diff_pct'] <= -11                                               # 3,362 vs 3,894 kg
 
 
 @needs_tesseract
