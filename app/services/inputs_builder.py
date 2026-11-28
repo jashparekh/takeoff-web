@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, object_session
 
 from ..db.models import BeamSpec, Floor, Member, Project
 from ..engine import Calc
+from .revisions import live
 
 ENGINE_PY = Path(__file__).parents[1] / 'engine.py'
 
@@ -37,7 +38,7 @@ CHECKED = ('accepted', 'edited', 'added')          # a person has looked at it i
 
 
 def floor_members(db: Session, floor: Floor) -> list[Member]:
-    return db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'beam',
+    return db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'beam', Member.sheet_id.in_(live()),
                                            Member.status != 'rejected')).all()
 
 
@@ -58,7 +59,8 @@ def beams_from_drawings(db: Session, floor: Floor) -> list[dict]:
     Every beam must have both, and both must have been checked in Review; otherwise NotReady says what is left."""
     members = [m for m in floor_members(db, floor) if (m.x1, m.y1) != (m.x2, m.y2)]
     specs = {s.name: s for s in db.scalars(select(BeamSpec).where(
-        BeamSpec.floor_id == floor.id, BeamSpec.status != 'rejected', BeamSpec.duplicate_of.is_(None)))}
+        BeamSpec.floor_id == floor.id, BeamSpec.status != 'rejected', BeamSpec.duplicate_of.is_(None),
+        BeamSpec.sheet_id.in_(live())))}
     todo_m = [m.name for m in members if m.status not in CHECKED]
     todo_s = [n for n in {m.name for m in members} if n in specs and specs[n].status not in CHECKED]
     no_spec = sorted({m.name for m in members} - set(specs), key=natural)
@@ -110,7 +112,7 @@ def slab_panels(db: Session, floor: Floor) -> dict:
     """The floor's slab readings as the engine takes them: `panels` (bottom bars, per panel) and `top` (bars over
     beams, per group, with the sheet's `top_distribution`). Each is given only once every one of its items has been
     checked in Review; until then that part is measured by average spacing, shown as an assumption."""
-    ps = db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'panel',
+    ps = db.scalars(select(Member).where(Member.floor_id == floor.id, Member.kind == 'panel', Member.sheet_id.in_(live()),
                                          Member.status != 'rejected')).all()
     bottom = [p for p in ps if 'bars' in (p.data or {})]
     top = [p for p in ps if 'top' in (p.data or {})]
@@ -126,7 +128,7 @@ def slab_panels(db: Session, floor: Floor) -> dict:
 
 def panels_waiting(db: Session, floor: Floor) -> int:
     """Panels read but not yet checked in Review."""
-    return len(db.scalars(select(Member.id).where(Member.floor_id == floor.id, Member.kind == 'panel',
+    return len(db.scalars(select(Member.id).where(Member.floor_id == floor.id, Member.kind == 'panel', Member.sheet_id.in_(live()),
                                                   Member.status == 'auto')).all())
 
 

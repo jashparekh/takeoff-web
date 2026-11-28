@@ -878,7 +878,7 @@ async function refreshUploads(openSheet) {
     ${u.error ? `<div class="note warn">${esc(u.error)}</div>` : ''}
     ${u.sheets.length ? `<div class="thumbs">${u.sheets.map(s => `<a href="${P}upload/${s.id}" data-sheet="${s.id}" class="thumb ${s.status === 'ready' ? '' : 'off'}" aria-label="Page ${s.page_no}">
       ${s.thumb_url ? `<img src="${s.thumb_url}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
-      <span class="row between small"><span>${s.drg_no ? esc(s.drg_no) : `Page ${s.page_no}`}</span>${s.status === 'ready' ? (needsYou(s) ? chip(['Check', 'medium']) : '') : chip(SHEET_STATUS[s.status])}</span>
+      <span class="row between small"><span>${s.drg_no ? esc(s.drg_no) : `Page ${s.page_no}`}${s.revision ? ` ${esc(s.revision)}` : ''}</span>${s.superseded_by ? chip(['Replaced', 'low']) : s.status === 'ready' ? (needsYou(s) ? chip(['Check', 'medium']) : '') : chip(SHEET_STATUS[s.status])}</span>
       <span class="small muted">${esc(sheetPlace(s))}</span></a>`).join('')}</div>` : ''}
   </div>`).join('') : '<div class="muted small">Nothing uploaded yet.</div>';
   renderCoverage();
@@ -887,7 +887,7 @@ async function refreshUploads(openSheet) {
 }
 
 const SCALE_CHECK = ['differs', 'borrowed', 'unchecked'];
-const needsYou = s => s.classify_status === 'needs_review' || SCALE_CHECK.includes(s.scale_status);
+const needsYou = s => !s.superseded_by && (s.classify_status === 'needs_review' || SCALE_CHECK.includes(s.scale_status));
 const typeLabel = k => (S.sheetTypes || []).find(t => t.key === k)?.label || (k ? k.replace(/_/g, ' ') : '');
 const floorsList = () => (S.project.buildings || []).flatMap(b => b.floors.map(f => ({ ...f, building: b.name, label: S.project.buildings.length > 1 ? `${b.name} · ${f.name}` : f.name })));
 const floorLabel = id => floorsList().find(f => f.id === id)?.label || '';
@@ -900,7 +900,7 @@ function sheetPlace(s) {
 /* Coverage: for each building, floors × the drawings each floor needs. Missing cells say what to upload. */
 function renderCoverage() {
   const el = $('#coverage'); if (!el) return;
-  const sheets = Object.values(S.upSheets || {});
+  const sheets = Object.values(S.upSheets || {}).filter(s => !s.superseded_by);     // replaced revisions don't count
   if (!sheets.length || !S.sheetTypes?.length) { el.hidden = true; return; }
   const cols = S.sheetTypes.filter(t => t.coverage);
   const at = (fid, type) => sheets.filter(s => s.floor_id === fid && s.sheet_type === type);
@@ -1016,6 +1016,7 @@ function showSheet(id) {
   const meta = [s.drg_no, s.revision, s.scale_text && `scale ${s.scale_text}`, s.drawn_on].filter(Boolean).map(esc).join(' · ');
   el.hidden = false;
   el.innerHTML = `<div class="hd"><div><h2>${esc(s.title || `${s.filename} · page ${s.page_no}`)}</h2><div class="small muted">${meta || esc(s.filename)}</div></div><button class="btn sm" id="closeSheet">Close</button></div>
+    ${s.superseded_by ? `<div class="pad small"><div class="note">Replaced by ${esc(S.upSheets?.[s.superseded_by]?.revision || 'a later revision')} of this drawing. Its readings are kept for comparison but no longer counted.</div></div>` : ''}
     ${s.classify_note ? `<div class="pad small"><div class="note warn">${esc(s.classify_note)}</div></div>` : ''}
     <form class="pad row small" id="placeForm">
       <label class="stack small">Type<select class="f" name="sheet_type" ${canEdit ? '' : 'disabled'}><option value="">Not known</option>${(S.sheetTypes || []).map(t => `<option value="${t.key}" ${t.key === s.sheet_type ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label>

@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from ..auth.deps import CurrentUser, Db, project_role
 from ..db.models import BAR_ROLES, Bar, BeamSpec, Correction, Member, Project, Sheet
 from ..services import checks
+from ..services.revisions import live
 from ..settings import get_settings
 from .uploads import member_dict, own_sheet, spec_dict
 
@@ -71,18 +72,22 @@ def review_queue(p: Viewer, db: Db, limit: int = 500):
     Repeats of another sheet are not listed (they are counted once, from the other sheet). Columns are left out
     until they are counted (M6): checking them now would change no quantity."""
     rows = db.execute(select(Member, Sheet).join(Sheet, Member.sheet_id == Sheet.id)
-                      .where(Member.project_id == p.id, Member.status == 'auto', Member.kind.notin_(NOT_REVIEWED))
+                      .where(Member.project_id == p.id, Member.status == 'auto', Member.kind.notin_(NOT_REVIEWED),
+                             Member.sheet_id.in_(live()))
                       .order_by(Member.confidence, Sheet.drg_no, Member.kind, Member.name).limit(limit)).all()
     srows = db.execute(select(BeamSpec, Sheet).join(Sheet, BeamSpec.sheet_id == Sheet.id)
-                       .where(BeamSpec.project_id == p.id, BeamSpec.status == 'auto', BeamSpec.duplicate_of.is_(None))
+                       .where(BeamSpec.project_id == p.id, BeamSpec.status == 'auto', BeamSpec.duplicate_of.is_(None),
+                              BeamSpec.sheet_id.in_(live()))
                        .order_by(BeamSpec.confidence, BeamSpec.name).limit(limit)).all()
     items = sorted([item(m, s, p.slug) for m, s in rows] + [spec_item(b, s, p.slug) for b, s in srows],
                    key=lambda i: (i['confidence'], i['item'], checks.natural(i['name'] or '')))
     counts = dict(db.execute(select(Member.status, func.count()).where(Member.project_id == p.id,
-                                                                       Member.kind.notin_(NOT_REVIEWED))
+                                                                       Member.kind.notin_(NOT_REVIEWED),
+                                                                       Member.sheet_id.in_(live()))
                              .group_by(Member.status)).all())
     for st, n in db.execute(select(BeamSpec.status, func.count()).where(
-            BeamSpec.project_id == p.id, BeamSpec.duplicate_of.is_(None)).group_by(BeamSpec.status)).all():
+            BeamSpec.project_id == p.id, BeamSpec.duplicate_of.is_(None),
+            BeamSpec.sheet_id.in_(live())).group_by(BeamSpec.status)).all():
         counts[st] = counts.get(st, 0) + n
     total = sum(counts.values())
     return dict(total=total, checked=total - counts.get('auto', 0), counts=counts, items=items[:limit])
@@ -246,7 +251,7 @@ def add_spec(p: Editor, sheet_id: str, req: SpecNew, user: CurrentUser, db: Db, 
     s = own_sheet(db, p, sheet_id)
     if s.sheet_type != 'beam_schedule':
         raise HTTPException(422, 'That sheet is not a beam schedule.')
-    if db.scalar(select(BeamSpec.id).where(BeamSpec.project_id == p.id, BeamSpec.name == req.name,
+    if db.scalar(select(BeamSpec.id).where(BeamSpec.project_id == p.id, BeamSpec.name == req.name, BeamSpec.sheet_id.in_(live()),
                                            BeamSpec.status != 'rejected', BeamSpec.duplicate_of.is_(None))):
         raise HTTPException(409, f'{req.name} already has a schedule reading; edit that one.')
     b = BeamSpec(project_id=p.id, sheet_id=s.id, floor_id=s.floor_id, name=req.name,

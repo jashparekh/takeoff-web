@@ -77,6 +77,7 @@ def sheet_dict(s: Sheet, slug: str) -> dict:
                 pt_per_in=s.pt_per_in, scale_ratio=round(72 / s.pt_per_in) if s.pt_per_in else None,
                 scale_status=s.scale_status, scale_error=s.scale_error, scale_checks=s.scale_checks,
                 scale_note=s.scale_note, layout_note=s.layout_note,
+                superseded_by=str(s.superseded_by) if s.superseded_by else None,
                 thumb_url=f'{base}/thumb.png' if ready else None,
                 image_url=f'{base}/display.png' if ready else None)
 

@@ -18,7 +18,8 @@ DISPLAY_FLOOR_H = 3.0          # m, when floor levels are not given
 
 def measured_sheet(db: Session, p: Project) -> Sheet | None:
     row = db.execute(select(Sheet, func.count(Member.id)).join(Member, Member.sheet_id == Sheet.id)
-                     .where(Sheet.project_id == p.id, Sheet.sheet_type == 'beam_layout', Member.status != 'rejected')
+                     .where(Sheet.project_id == p.id, Sheet.sheet_type == 'beam_layout', Member.status != 'rejected',
+                            Sheet.superseded_by.is_(None))
                      .group_by(Sheet.id).order_by(func.count(Member.id).desc()).limit(1)).first()
     return row[0] if row else None
 

@@ -31,6 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import Assumption, BeamSpec, Issue, Member, Project, Sheet
+from .revisions import live
 
 
 def natural(name: str):
@@ -309,10 +310,11 @@ def run(db: Session, project_id, results: dict | None = None, site: dict | None 
     """Evaluate every rule that can be, and bring the project's Issues in line. `results` (+ `site`) from a run just
     saved enables the run rules."""
     project = db.get(Project, project_id)
-    members = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'beam',
+    members = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'beam', Member.sheet_id.in_(live()),
                                               Member.status != 'rejected')).all()
-    specs = db.scalars(select(BeamSpec).where(BeamSpec.project_id == project_id, BeamSpec.status != 'rejected')).all()
-    panels = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'panel',
+    specs = db.scalars(select(BeamSpec).where(BeamSpec.project_id == project_id, BeamSpec.status != 'rejected',
+                                              BeamSpec.sheet_id.in_(live()))).all()
+    panels = db.scalars(select(Member).where(Member.project_id == project_id, Member.kind == 'panel', Member.sheet_id.in_(live()),
                                              Member.status != 'rejected')).all()
     ctx = Ctx(db, project, list(members), [s for s in specs if s.duplicate_of is None],
               [s for s in specs if s.duplicate_of is not None], list(panels), results, site)
